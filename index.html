@@ -114,6 +114,12 @@
         };
 
         const STYLES = ['逃げ', '先行', '差し', '追込み'];
+        const STYLE_STAGE_BONUSES = {
+            '逃げ': { early: 3, mid: 1, late: 0, final: 0 },
+            '先行': { early: 1, mid: 2, late: 1, final: 0 },
+            '差し': { early: 0, mid: 1, late: 2, final: 1 },
+            '追込み': { early: 0, mid: 0, late: 1, final: 3 }
+        };
         const PLAYER_COLORS = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b'];
 
         const DIST_CATEGORIES = ['短距離', 'マイル', '中距離', '長距離'];
@@ -130,6 +136,13 @@
             if (idx === -1) return baseCat;
             const nextIdx = Math.max(0, Math.min(DIST_CATEGORIES.length - 1, idx + shift));
             return DIST_CATEGORIES[nextIdx];
+        }
+
+        function getDistanceDiffPenalty(horseDistCat, raceDistCat) {
+            const hIdx = DIST_CATEGORIES.indexOf(horseDistCat);
+            const rIdx = DIST_CATEGORIES.indexOf(raceDistCat);
+            if (hIdx === -1 || rIdx === -1) return 0;
+            return Math.abs(hIdx - rIdx);
         }
 
         // クラシック6戦
@@ -231,11 +244,6 @@
             { id: 'init_j_sashi', category: '騎手', name: '差しの名手', desc: '競走馬の脚質が差しの場合、出目の最大値と最小値をプラス1する。' },
             { id: 'init_j_oikomi', category: '騎手', name: '追込みの名手', desc: '競走馬の脚質が追込みの場合、出目の最大値と最小値をプラス1する。' }
         ];
-
-        const HORSE_PREFIXES_MALE = ['ディープ', 'キング', 'サンデー', 'オルフェ', 'キタサン', 'コントレ', 'イクイ', 'ドゥラ', 'ゴールド', 'エピファ', 'ロード', 'スペシャル', 'サイレンス', 'シンボリ', 'トウカイ', 'ナリタ'];
-        const HORSE_SUFFIXES_MALE = ['インパクト', 'カメハメハ', 'サイレンス', 'ーヴル', 'ブラック', 'イル', 'ノックス', 'メンテ', 'シップ', 'ネイア', 'カナロア', 'ウィーク', 'スズカ', 'ルドルフ', 'テイオー', 'ブライアン'];
-        const HORSE_PREFIXES_FEMALE = ['アーモンド', 'ジェンティル', 'グラン', 'リバティ', 'クロノ', 'リス', 'ブエナ', 'ウオッカ', 'ダイワ', 'エア', 'アパパネ', 'デアリング', 'ソダシ', 'スターズ', 'ソング', 'ラヴズ'];
-        const HORSE_SUFFIXES_FEMALE = ['アイ', 'ドンナ', 'アレグリア', 'アイランド', 'ジェネシス', 'グラシュー', 'ビスタ', 'クイーン', 'スカーレット', 'グルーヴ', 'ローズ', 'タクト', 'ホワイト', 'オンアース', 'ライン', 'オンリーユー'];
 
         const HORSE_WORDS_MALE = ['インパクト', 'キング', 'サンデー', 'ブラック', 'ゴールド', 'シップ', 'ネイア', 'カナロア', 'スズカ', 'ルドルフ', 'テイオー', 'ブライアン', 'フェスタ', 'ヴァーミリオン', 'クロフネ', 'オペラオー'];
         const HORSE_WORDS_FEMALE = ['クイーン', 'アイ', 'ドンナ', 'アレグリア', 'アイランド', 'ジェネシス', 'ビスタ', 'スカーレット', 'グルーヴ', 'ローズ', 'タクト', 'ホワイト', 'ウオッカ', 'ソダシ', 'アパパネ', 'ブエナ'];
@@ -404,13 +412,11 @@
 
             generateStableHorses(ownerId, ownerName, includeFillies = false) {
                 const horses = [];
-                // 牡馬4頭
                 const maleDists = shuffleArray(DIST_CATEGORIES);
                 const maleStyles = shuffleArray(STYLES);
                 const unrulyMaleIdx = Math.floor(Math.random() * 4);
                 const usedNames = new Set();
 
-                // オーナー名を冠名（接頭辞または接尾辞）として付与するヘルパー
                 const cleanCrown = (ownerName || 'オーナー').replace(/\(CPU\)$/i, '').trim() || 'オーナー';
                 const buildHorseName = (baseWord) => {
                     return Math.random() < 0.5 ? `${cleanCrown}${baseWord}` : `${baseWord}${cleanCrown}`;
@@ -441,7 +447,6 @@
                     });
                 }
 
-                // 牝馬4頭（真の最強馬決定戦モードのみ）
                 if (includeFillies) {
                     const femaleDists = shuffleArray(DIST_CATEGORIES);
                     const femaleStyles = shuffleArray(STYLES);
@@ -482,104 +487,108 @@
                 const nameInput = document.getElementById('owner-name-input');
                 const stableSelect = document.getElementById('owner-stable-select');
                 const modeSelect = document.querySelector('input[name="game-mode"]:checked');
+                const cpuCheckbox = document.getElementById('enable-cpu-checkbox');
 
                 const ownerName = (nameInput?.value || '').trim() || 'オーナー1';
                 const stable = stableSelect?.value || '美浦';
                 const mode = modeSelect?.value || 'classic';
+                const enableCpu = cpuCheckbox ? cpuCheckbox.checked : true;
                 const includeFillies = GAME_MODES[mode].includeFillies;
 
                 const newRoomId = this.generateRoomId();
-                this.roomId = newRoomId;
-
-                const hostPlayer = {
-                    id: this.playerId,
-                    name: ownerName,
-                    stable,
-                    isCpu: false,
-                    color: PLAYER_COLORS[0],
-                    money: 10000, // 初期資金1億円
-                    wins: 0,
-                    wonRaceNames: [],
-                    horses: this.generateStableHorses(this.playerId, ownerName, includeFillies),
-                    inventory: JSON.parse(JSON.stringify(INITIAL_JOCKEY_ITEMS)),
-                    equipped: { '騎手': null, '装備': null, '調教': null },
-                    selectedHorseId: null,
-                    paddockReady: false,
-                    auctionBid: null
-                };
-
                 const initialData = {
                     roomId: newRoomId,
                     hostId: this.playerId,
                     mode,
-                    phase: 'lobby', // lobby | auction | paddock | racing | race_result | final_awards
+                    enableCpu,
+                    phase: 'lobby',
                     raceIndex: 0,
-                    players: [hostPlayer],
+                    players: [
+                        {
+                            id: this.playerId,
+                            name: ownerName,
+                            stable,
+                            isCpu: false,
+                            color: PLAYER_COLORS[0],
+                            money: 10000,
+                            wins: 0,
+                            wonRaceNames: [],
+                            horses: this.generateStableHorses(this.playerId, ownerName, includeFillies),
+                            inventory: JSON.parse(JSON.stringify(INITIAL_JOCKEY_ITEMS)),
+                            equipped: { '騎手': null, '装備': null, '調教': null },
+                            selectedHorseId: null,
+                            paddockReady: false,
+                            auctionBid: null
+                        }
+                    ],
                     auction: null,
                     raceState: null,
                     lastRaceResult: null,
-                    updatedAt: Date.now()
+                    finalAwards: []
                 };
 
+                this.roomId = newRoomId;
                 this.subscribeToRoom(newRoomId);
                 await this.saveRoomData(newRoomId, initialData);
-                this.showToast(`部屋を作成しました（ID: ${newRoomId}）`, 'success');
+                this.showToast(`ルーム（ID: ${newRoomId}）を作成しました！`, 'success');
             }
 
             async joinRoom() {
-                const nameInput = document.getElementById('owner-name-input');
-                const stableSelect = document.getElementById('owner-stable-select');
-                const roomInput = document.getElementById('join-room-input');
+                const nameInput = document.getElementById('join-owner-name-input');
+                const stableSelect = document.getElementById('join-owner-stable-select');
+                const roomInput = document.getElementById('join-room-id-input');
 
                 const ownerName = (nameInput?.value || '').trim() || 'ゲストオーナー';
                 const stable = stableSelect?.value || '栗東';
                 const targetRoomId = (roomInput?.value || '').trim();
 
-                if (!targetRoomId || targetRoomId.length !== 6) {
-                    this.showToast('6桁の部屋IDを入力してください', 'error');
+                if (!targetRoomId) {
+                    this.showToast('6桁の部屋IDを入力してください。', 'error');
                     return;
                 }
 
-                let data = null;
+                let existingData = null;
                 if (firebaseDb) {
                     try {
                         const doc = await firebaseDb.collection('rooms').doc(targetRoomId).get();
-                        if (doc.exists) data = doc.data();
+                        if (doc.exists) {
+                            existingData = doc.data();
+                        }
                     } catch (err) {
-                        console.warn('Firestore読み込みエラー:', err);
+                        console.warn('Firestoreルーム検索エラー:', err);
                     }
                 }
-                if (!data) {
+
+                if (!existingData) {
                     const localRaw = localStorage.getItem('tdd_room_' + targetRoomId);
-                    if (localRaw) data = JSON.parse(localRaw);
+                    if (localRaw) {
+                        existingData = JSON.parse(localRaw);
+                    }
                 }
 
-                if (!data) {
-                    this.showToast('指定された部屋IDが見つかりません', 'error');
+                if (!existingData) {
+                    this.showToast('指定された部屋IDが見つかりませんでした。', 'error');
                     return;
                 }
 
-                this.roomId = targetRoomId;
-                this.subscribeToRoom(targetRoomId);
+                if (existingData.phase !== 'lobby') {
+                    this.showToast('すでにレース・ツアーが進行中の部屋です。', 'error');
+                    return;
+                }
 
-                const existing = data.players.find(p => p.id === this.playerId);
-                if (!existing) {
-                    if (data.phase !== 'lobby') {
-                        this.showToast('すでに対戦が開始されています', 'error');
+                const alreadyJoined = existingData.players.some(p => p.id === this.playerId);
+                if (!alreadyJoined) {
+                    if (existingData.players.length >= 4) {
+                        this.showToast('ルームが満員（最大4人）です。', 'error');
                         return;
                     }
-                    if (data.players.length >= 4) {
-                        this.showToast('満員（最大4名）のため参加できません', 'error');
-                        return;
-                    }
-
-                    const includeFillies = GAME_MODES[data.mode].includeFillies;
-                    const newPlayer = {
+                    const includeFillies = GAME_MODES[existingData.mode]?.includeFillies || false;
+                    existingData.players.push({
                         id: this.playerId,
                         name: ownerName,
                         stable,
                         isCpu: false,
-                        color: PLAYER_COLORS[data.players.length],
+                        color: PLAYER_COLORS[existingData.players.length],
                         money: 10000,
                         wins: 0,
                         wonRaceNames: [],
@@ -589,48 +598,67 @@
                         selectedHorseId: null,
                         paddockReady: false,
                         auctionBid: null
-                    };
-                    data.players.push(newPlayer);
-                    data.updatedAt = Date.now();
-                    await this.saveRoomData(targetRoomId, data);
+                    });
                 }
 
-                this.showToast(`部屋（ID: ${targetRoomId}）に入室しました！`, 'success');
+                this.roomId = targetRoomId;
+                this.subscribeToRoom(targetRoomId);
+                await this.saveRoomData(targetRoomId, existingData);
+                this.showToast(`ルーム ${targetRoomId} に参加しました！`, 'success');
+            }
+
+            async leaveRoom() {
+                this.stopRaceLoop();
+                if (this.unsubscribeRoom) {
+                    this.unsubscribeRoom();
+                    this.unsubscribeRoom = null;
+                }
+                this.roomId = null;
+                this.roomData = null;
                 this.renderGame();
+            }
+
+            async toggleCpuSetting(enabled) {
+                if (!this.roomData || this.roomData.hostId !== this.playerId || this.roomData.phase !== 'lobby') return;
+                const data = JSON.parse(JSON.stringify(this.roomData));
+                data.enableCpu = enabled;
+                await this.saveRoomData(this.roomId, data);
             }
 
             async startGame() {
                 if (!this.roomData || this.roomData.hostId !== this.playerId) return;
                 const data = JSON.parse(JSON.stringify(this.roomData));
                 const includeFillies = GAME_MODES[data.mode].includeFillies;
+                const shouldFillCpu = data.enableCpu !== false;
 
-                // 4名に満たない枠はCPUを追加
-                const cpuNames = ['社台オーナー(CPU)', 'ノーザン社長(CPU)', '個人大馬主(CPU)'];
-                const cpuStables = ['栗東', '美浦', '栗東'];
-                let cpuIdx = 0;
+                if (shouldFillCpu) {
+                    const cpuNames = ['社台オーナー(CPU)', 'ノーザン社長(CPU)', '個人大馬主(CPU)'];
+                    const cpuStables = ['栗東', '美浦', '栗東'];
+                    let cpuIdx = 0;
 
-                while (data.players.length < 4) {
-                    const cpuId = 'cpu_' + (data.players.length + 1);
-                    const cName = cpuNames[cpuIdx] || `CPUオーナー${data.players.length + 1}`;
-                    const cStable = cpuStables[cpuIdx % cpuStables.length];
-                    cpuIdx++;
+                    while (data.players.length < 4) {
+                        const cpuId = 'cpu_' + (data.players.length + 1);
+                        const cName = cpuNames[cpuIdx] || `CPUオーナー${data.players.length + 1}`;
+                        const cStable = cpuStables[cpuIdx % cpuStables.length];
+                        cpuIdx++;
 
-                    data.players.push({
-                        id: cpuId,
-                        name: cName,
-                        stable: cStable,
-                        isCpu: true,
-                        color: PLAYER_COLORS[data.players.length],
-                        money: 10000,
-                        wins: 0,
-                        wonRaceNames: [],
-                        horses: this.generateStableHorses(cpuId, cName, includeFillies),
-                        inventory: JSON.parse(JSON.stringify(INITIAL_JOCKEY_ITEMS)),
-                        equipped: { '騎手': null, '装備': null, '調教': null },
-                        selectedHorseId: null,
-                        paddockReady: false,
-                        auctionBid: null
-                    });
+                        data.players.push({
+                            id: cpuId,
+                            name: cName,
+                            stable: cStable,
+                            isCpu: true,
+                            color: PLAYER_COLORS[data.players.length],
+                            money: 10000,
+                            wins: 0,
+                            wonRaceNames: [],
+                            horses: this.generateStableHorses(cpuId, cName, includeFillies),
+                            inventory: JSON.parse(JSON.stringify(INITIAL_JOCKEY_ITEMS)),
+                            equipped: { '騎手': null, '装備': null, '調教': null },
+                            selectedHorseId: null,
+                            paddockReady: false,
+                            auctionBid: null
+                        });
+                    }
                 }
 
                 data.raceIndex = 0;
@@ -639,14 +667,14 @@
             }
 
             // ==========================================
-            // 4. オークションフェーズ
+            // 4. オークションフェーズ処理
             // ==========================================
             setupAuctionPhase(data) {
-                const pool = shuffleArray(ITEM_CATALOG).slice(0, 2);
+                const pickedItems = shuffleArray(ITEM_CATALOG).slice(0, 2);
                 data.phase = 'auction';
                 data.auction = {
+                    items: pickedItems,
                     itemIndex: 0,
-                    items: pool,
                     history: []
                 };
                 data.players.forEach(p => {
@@ -656,82 +684,86 @@
             }
 
             async submitBid(amount) {
-                if (!this.roomData || this.roomData.phase !== 'auction' || this.isProcessing) return;
+                if (!this.roomData || this.roomData.phase !== 'auction') return;
                 const data = JSON.parse(JSON.stringify(this.roomData));
                 const me = data.players.find(p => p.id === this.playerId);
                 if (!me || me.auctionBid !== null) return;
 
-                const validBid = Math.max(0, Math.min(me.money, Math.floor(amount / 1000) * 1000));
-                me.auctionBid = validBid;
+                const safeAmount = Math.max(0, Math.min(me.money, Number(amount) || 0));
+                me.auctionBid = safeAmount;
 
-                // ホストがCPU入札と全員完了判定を処理
-                if (data.hostId === this.playerId) {
-                    this.processAuctionProgress(data);
-                }
+                this.processAuctionProgress(data);
                 await this.saveRoomData(this.roomId, data);
             }
 
             processAuctionProgress(data) {
-                // CPUの入札を自動決定
+                if (!data || data.phase !== 'auction' || !data.auction) return;
+                const auc = data.auction;
+                const currentItem = auc.items[auc.itemIndex];
+
+                // CPUの入札を決定
                 data.players.forEach(p => {
                     if (p.isCpu && p.auctionBid === null) {
-                        if (p.money < 1000 || Math.random() < 0.35) {
-                            p.auctionBid = 0;
+                        if (p.money >= 2000 && Math.random() < 0.7) {
+                            const steps = Math.min(Math.floor(p.money / 1000), Math.floor(1 + Math.random() * 3));
+                            p.auctionBid = steps * 1000;
                         } else {
-                            const maxStep = Math.min(Math.floor(p.money / 1000), 4);
-                            const step = Math.floor(Math.random() * maxStep) + 1;
-                            p.auctionBid = step * 1000;
+                            p.auctionBid = 0;
                         }
                     }
                 });
 
-                const allBid = data.players.every(p => p.auctionBid !== null);
-                if (!allBid) return;
+                // 全員入札完了したら落札判定
+                if (data.players.every(p => p.auctionBid !== null)) {
+                    let highestBid = 0;
+                    let winners = [];
 
-                const currentItem = data.auction.items[data.auction.itemIndex];
-                let highest = 0;
-                data.players.forEach(p => {
-                    if (p.auctionBid > highest) highest = p.auctionBid;
-                });
+                    data.players.forEach(p => {
+                        if (p.auctionBid > highestBid) {
+                            highestBid = p.auctionBid;
+                            winners = [p];
+                        } else if (p.auctionBid === highestBid && highestBid > 0) {
+                            winners.push(p);
+                        }
+                    });
 
-                let winnerText = '入札なし（流札）';
-                if (highest > 0) {
-                    const topBidders = data.players.filter(p => p.auctionBid === highest);
-                    const winner = topBidders[Math.floor(Math.random() * topBidders.length)];
-                    winner.money -= highest;
-                    winner.inventory.push(currentItem);
-                    winnerText = `${winner.name} が ${formatMoney(highest)} で落札！`;
-                }
+                    let resultText = '該当者なし（流札）';
+                    if (winners.length > 0 && highestBid > 0) {
+                        const winner = winners[Math.floor(Math.random() * winners.length)];
+                        winner.money -= highestBid;
+                        winner.inventory.push(JSON.parse(JSON.stringify(currentItem)));
+                        resultText = `${winner.name} が ${formatMoney(highestBid)} で落札！`;
+                    }
 
-                data.auction.history.push({
-                    item: currentItem,
-                    result: winnerText
-                });
+                    auc.history.push({
+                        item: currentItem,
+                        result: resultText
+                    });
 
-                if (data.auction.itemIndex < 1) {
-                    data.auction.itemIndex += 1;
-                    data.players.forEach(p => { p.auctionBid = null; });
-                } else {
-                    // 全2品終了 -> パドックへ
-                    this.setupPaddockPhase(data);
+                    data.players.forEach(p => {
+                        p.auctionBid = null;
+                    });
+
+                    if (auc.itemIndex + 1 < auc.items.length) {
+                        auc.itemIndex += 1;
+                    } else {
+                        this.setupPaddockPhase(data);
+                    }
                 }
             }
 
             // ==========================================
-            // 5. パドック（出走馬＆アイテム装備）フェーズ
+            // 5. パドック・出走準備フェーズ処理
             // ==========================================
             setupPaddockPhase(data) {
                 const races = this.getActiveRaces(data);
                 const race = races[data.raceIndex];
                 data.phase = 'paddock';
-
                 data.players.forEach(p => {
                     p.paddockReady = false;
-                    // 牝馬限定戦の場合は牝馬をデフォルト選択
-                    const eligibleHorses = race.fillyOnly
-                        ? p.horses.filter(h => h.sex === '牝')
-                        : p.horses;
-                    p.selectedHorseId = eligibleHorses[0]?.id || p.horses[0].id;
+                    const eligibleHorses = p.horses.filter(h => !race.fillyOnly || h.sex === '牝');
+                    const currentSelected = eligibleHorses.find(h => h.id === p.selectedHorseId);
+                    p.selectedHorseId = currentSelected ? currentSelected.id : (eligibleHorses[0]?.id || p.horses[0]?.id || null);
                 });
             }
 
@@ -740,16 +772,6 @@
                 const data = JSON.parse(JSON.stringify(this.roomData));
                 const me = data.players.find(p => p.id === this.playerId);
                 if (!me || me.paddockReady) return;
-
-                const races = this.getActiveRaces(data);
-                const race = races[data.raceIndex];
-                const horse = me.horses.find(h => h.id === horseId);
-                if (!horse) return;
-                if (race.fillyOnly && horse.sex !== '牝') {
-                    this.showToast('このレースは牝馬限定戦です！', 'error');
-                    return;
-                }
-
                 me.selectedHorseId = horseId;
                 await this.saveRoomData(this.roomId, data);
             }
@@ -759,17 +781,14 @@
                 const data = JSON.parse(JSON.stringify(this.roomData));
                 const me = data.players.find(p => p.id === this.playerId);
                 if (!me || me.paddockReady) return;
-
                 const item = me.inventory[invIndex];
                 if (!item) return;
 
-                // すでに同カテゴリに装備があればインベントリへ戻す
-                const prevEquipped = me.equipped[item.category];
-                me.inventory.splice(invIndex, 1);
-                if (prevEquipped) {
-                    me.inventory.push(prevEquipped);
+                if (me.equipped[item.category]) {
+                    me.inventory.push(me.equipped[item.category]);
                 }
                 me.equipped[item.category] = item;
+                me.inventory.splice(invIndex, 1);
                 await this.saveRoomData(this.roomId, data);
             }
 
@@ -777,12 +796,10 @@
                 if (!this.roomData || this.roomData.phase !== 'paddock') return;
                 const data = JSON.parse(JSON.stringify(this.roomData));
                 const me = data.players.find(p => p.id === this.playerId);
-                if (!me || me.paddockReady) return;
+                if (!me || me.paddockReady || !me.equipped[category]) return;
 
-                const item = me.equipped[category];
-                if (!item) return;
+                me.inventory.push(me.equipped[category]);
                 me.equipped[category] = null;
-                me.inventory.push(item);
                 await this.saveRoomData(this.roomId, data);
             }
 
@@ -793,31 +810,25 @@
                 if (!me || me.paddockReady) return;
 
                 me.paddockReady = true;
-
-                if (data.hostId === this.playerId) {
-                    this.processPaddockProgress(data);
-                }
+                this.processPaddockProgress(data);
                 await this.saveRoomData(this.roomId, data);
             }
 
             processPaddockProgress(data) {
+                if (!data || data.phase !== 'paddock') return;
                 const races = this.getActiveRaces(data);
                 const race = races[data.raceIndex];
-                const raceDistCat = getDistanceCategory(race.distance);
 
-                // CPUの出走馬と装備を自動決定
                 data.players.forEach(p => {
                     if (p.isCpu && !p.paddockReady) {
-                        const eligible = race.fillyOnly ? p.horses.filter(h => h.sex === '牝') : p.horses;
-                        // 距離適性が合う馬を優先
-                        const bestHorse = eligible.find(h => h.distance === raceDistCat) || eligible[Math.floor(Math.random() * eligible.length)];
-                        p.selectedHorseId = bestHorse.id;
+                        const eligible = p.horses.filter(h => !race.fillyOnly || h.sex === '牝');
+                        const chosen = eligible[Math.floor(Math.random() * eligible.length)] || p.horses[0];
+                        p.selectedHorseId = chosen.id;
 
-                        // 所持アイテムを各カテゴリに1つずつ自動装備
                         ['騎手', '装備', '調教'].forEach(cat => {
-                            if (!p.equipped[cat]) {
+                            if (!p.equipped[cat] && p.inventory.length > 0) {
                                 const idx = p.inventory.findIndex(it => it.category === cat);
-                                if (idx !== -1) {
+                                if (idx !== -1 && Math.random() < 0.6) {
                                     p.equipped[cat] = p.inventory[idx];
                                     p.inventory.splice(idx, 1);
                                 }
@@ -827,196 +838,21 @@
                     }
                 });
 
-                const allReady = data.players.every(p => p.paddockReady);
-                if (allReady) {
+                if (data.players.every(p => p.paddockReady)) {
                     this.setupRacePhase(data);
                 }
             }
 
             // ==========================================
-            // 6. 出目計算＆レース進行ロジック
+            // 6. レース進行・能力計算・写真判定
             // ==========================================
-            getRunnerAbilityBreakdown(player, horse, race, stageKey) {
-                const eqJockey = player.equipped['騎手'];
-                const eqGear = player.equipped['装備'];
-                const eqTrain = player.equipped['調教'];
-
-                // 1. 気性難
-                const cancelUnruly = (eqJockey?.id === 'j_yokoyama_n') || (eqGear?.id === 'e_menko');
-                let unrulyStatus = null;
-                if (horse.isUnruly) {
-                    unrulyStatus = cancelUnruly ? '気性難(最大+3/最小消去)' : '気性難(最大+3/最小-5)';
-                }
-
-                // 2. 遠征判定
-                const homeTracks = STABLES[player.stable]?.homeTracks || [];
-                const isAway = !homeTracks.includes(race.track);
-                const awayBlocked = isAway && eqTrain?.id === 't_local';
-                let awayStatus = null;
-                if (isAway) {
-                    awayStatus = awayBlocked ? '遠征(現地追いで無効)' : '遠征(最大-2)';
-                }
-
-                // 3. 距離適性（シフト反映）
-                let distShift = 0;
-                if (eqJockey?.id === 'j_ikezoe') distShift += 1;
-                if (eqTrain?.id === 't_hanro') distShift += 1;
-                if (eqTrain?.id === 't_shorten') distShift -= 1;
-
-                const effectiveDist = shiftDistanceCategory(horse.distance, distShift);
-                const raceDistCat = getDistanceCategory(race.distance);
-                const isDistMatch = effectiveDist === raceDistCat;
-                const distLabel = distShift !== 0
-                    ? `適性:${horse.distance}→${effectiveDist}(${isDistMatch ? '一致+2' : '不一致-1'})`
-                    : `適性:${horse.distance}(${isDistMatch ? '一致+2' : '不一致-1'})`;
-
-                // 4. 脚質＆展開一致
-                const styleStageMap = {
-                    '逃げ': 'early',
-                    '先行': 'mid',
-                    '差し': 'late',
-                    '追込み': 'final'
-                };
-                const isStyleActive = styleStageMap[horse.style] === stageKey;
-                const styleLabel = isStyleActive
-                    ? `脚質:${horse.style}(展開一致+2発動中!)`
-                    : `脚質:${horse.style}`;
-
-                // 5. 勝利成長ボーナス（1勝につき最大+1・重複あり／上限なし）
-                const growthBonus = horse.wins || 0;
-
-                // 6. 装備中アイテム一覧
-                const equippedList = [eqJockey, eqGear, eqTrain].filter(Boolean);
-
-                return {
-                    distLabel,
-                    isDistMatch,
-                    styleLabel,
-                    isStyleActive,
-                    unrulyStatus,
-                    cancelUnruly,
-                    awayStatus,
-                    awayBlocked,
-                    growthBonus,
-                    equippedList
-                };
-            }
-
-            calculateDiceRange(player, horse, race, stageKey) {
-                // stageKey: 'early' | 'mid' | 'late' | 'final'
-                let minVal = horse.baseMin; // 牡馬10 / 牝馬13
-                let maxVal = horse.baseMax; // 牡馬20 / 牝馬18
-
-                const eqJockey = player.equipped['騎手'];
-                const eqGear = player.equipped['装備'];
-                const eqTrain = player.equipped['調教'];
-
-                // 1. 気性難効果（最大+3, 最小-5）＆打ち消し判定
-                if (horse.isUnruly) {
-                    maxVal += 3;
-                    const cancelUnruly = (eqJockey?.id === 'j_yokoyama_n') || (eqGear?.id === 'e_menko');
-                    if (!cancelUnruly) {
-                        minVal -= 5;
-                    }
-                }
-
-                // 2. 輸送競馬ペナルティ（所属厩舎のホーム以外で最大-2 / 「現地追い」で無効化）
-                const homeTracks = STABLES[player.stable]?.homeTracks || [];
-                const isAway = !homeTracks.includes(race.track);
-                if (isAway && eqTrain?.id !== 't_local') {
-                    maxVal -= 2;
-                }
-
-                // 3. 距離適性（アイテムによる±1シフト反映）
-                let distShift = 0;
-                if (eqJockey?.id === 'j_ikezoe') distShift += 1;
-                if (eqTrain?.id === 't_hanro') distShift += 1;
-                if (eqTrain?.id === 't_shorten') distShift -= 1;
-
-                const effectiveHorseDist = shiftDistanceCategory(horse.distance, distShift);
-                const raceDistCat = getDistanceCategory(race.distance);
-
-                if (effectiveHorseDist === raceDistCat) {
-                    minVal += 2;
-                    maxVal += 2;
-                } else {
-                    minVal -= 1;
-                    maxVal -= 1;
-                }
-
-                // 4. 脚質ボーナス（該当ステージで最大・最小+2）
-                const styleStageMap = {
-                    '逃げ': 'early',
-                    '先行': 'mid',
-                    '差し': 'late',
-                    '追込み': 'final'
-                };
-                if (styleStageMap[horse.style] === stageKey) {
-                    minVal += 2;
-                    maxVal += 2;
-                }
-
-                // 5. 勝利成長ボーナス（1勝につき最大+1・重複あり／上限なし）
-                const growthBonus = horse.wins || 0;
-                maxVal += growthBonus;
-
-                // 6. 個別アイテム効果
-                if (eqJockey) {
-                    if (eqJockey.id === 'init_j_nige' && horse.style === '逃げ') { minVal += 1; maxVal += 1; }
-                    if (eqJockey.id === 'init_j_senko' && horse.style === '先行') { minVal += 1; maxVal += 1; }
-                    if (eqJockey.id === 'init_j_sashi' && horse.style === '差し') { minVal += 1; maxVal += 1; }
-                    if (eqJockey.id === 'init_j_oikomi' && horse.style === '追込み') { minVal += 1; maxVal += 1; }
-                    if (eqJockey.id === 'j_fukunaga' && horse.sex === '牝') { minVal += 3; maxVal += 3; }
-                    if (eqJockey.id === 'j_sakai' && horse.style === '逃げ') { minVal += 3; maxVal += 3; }
-                    if (eqJockey.id === 'j_kawada' && horse.style === '先行') { minVal += 3; maxVal += 3; }
-                    if (eqJockey.id === 'j_lemaire' && horse.style === '差し') { minVal += 3; maxVal += 3; }
-                    if (eqJockey.id === 'j_take' && horse.style === '追込み') { minVal += 3; maxVal += 3; }
-                    if (eqJockey.id === 'j_shibata') { minVal += 4; }
-                    if (eqJockey.id === 'j_yokoyama_t' && raceDistCat === '短距離') { minVal += 3; maxVal += 3; }
-                    if (eqJockey.id === 'j_tosaki' && raceDistCat === 'マイル') { minVal += 3; maxVal += 3; }
-                    if (eqJockey.id === 'j_demuro' && raceDistCat === '中距離') { minVal += 3; maxVal += 3; }
-                    if (eqJockey.id === 'j_ebina' && raceDistCat === '長距離') { minVal += 3; maxVal += 3; }
-                }
-
-                if (eqGear) {
-                    if (eqGear.id === 'e_horseshoe') { minVal += 3; }
-                    if (eqGear.id === 'e_whip') { maxVal += 3; minVal -= 2; }
-                    if (eqGear.id === 'e_brush') { maxVal += 1; minVal += 2; }
-                    if (eqGear.id === 'e_feed') { maxVal += 2; }
-                }
-
-                if (eqTrain) {
-                    if (eqTrain.id === 't_gate' && stageKey === 'early') { maxVal += 3; }
-                    if (eqTrain.id === 't_course' && stageKey === 'final') { maxVal += 3; }
-                }
-
-                minVal = Math.max(1, minVal);
-                maxVal = Math.max(minVal, maxVal);
-                return { min: minVal, max: maxVal };
-            }
-
-            getStageForTurn(turn, trackName, maxTurns = 10) {
-                // 総ターン数（レース距離÷100）を展開割合に応じて割り当て
-                const prof = TRACK_PROFILES[trackName] || TRACK_PROFILES['東京競馬場'];
-                const tEarly = Math.max(1, Math.round(maxTurns * prof.early));
-                const tMid = Math.max(tEarly + 1, tEarly + Math.round(maxTurns * prof.mid));
-                const tLate = Math.max(tMid + 1, tMid + Math.round(maxTurns * prof.late));
-
-                if (turn <= tEarly) return { key: 'early', label: '序盤' };
-                if (turn <= tMid) return { key: 'mid', label: '中盤' };
-                if (turn <= tLate) return { key: 'late', label: '終盤' };
-                return { key: 'final', label: '最終盤' };
-            }
-
             setupRacePhase(data) {
                 const races = this.getActiveRaces(data);
                 const race = races[data.raceIndex];
-                const totalTurns = Math.max(1, Math.round(race.distance / 100));
-                data.phase = 'racing';
+                const maxTurns = Math.max(1, Math.floor(race.distance / 100));
 
                 const runners = data.players.map(p => {
                     const horse = p.horses.find(h => h.id === p.selectedHorseId) || p.horses[0];
-                    const hasKoban = p.equipped['装備']?.id === 'e_koban';
                     return {
                         playerId: p.id,
                         playerName: p.name,
@@ -1024,74 +860,256 @@
                         horseId: horse.id,
                         horseName: horse.name,
                         sex: horse.sex,
-                        style: horse.style,
-                        distance: horse.distance,
-                        isUnruly: horse.isUnruly,
-                        hasKoban,
                         progress: 0,
                         lastRoll: null,
-                        turnLogs: []
+                        lastMoved: false
                     };
                 });
 
+                data.phase = 'racing';
                 data.raceState = {
                     turn: 0,
-                    maxTurns: totalTurns,
+                    maxTurns,
+                    isStarted: false,
                     runners,
-                    commentary: `${race.name}（${race.track}・芝${race.distance}m／全${totalTurns}ターン）ゲートイン完了！`
+                    commentary: '全馬ゲートイン完了！「レース開始」ボタンを押して発走しましょう！'
                 };
             }
 
-            async advanceRaceTurn() {
-                if (!this.roomData || this.roomData.phase !== 'racing' || this.roomData.hostId !== this.playerId) return;
-                if (this.isProcessing) return;
-                this.isProcessing = true;
+            getStageForTurn(turn, trackName, maxTurns) {
+                const profile = TRACK_PROFILES[trackName] || TRACK_PROFILES['阪神競馬場'];
+                const eTurns = Math.max(1, Math.round(maxTurns * profile.early));
+                const mTurns = Math.max(0, Math.round(maxTurns * profile.mid));
+                const lTurns = Math.max(0, Math.round(maxTurns * profile.late));
 
+                if (turn <= eTurns) return { key: 'early', label: '序盤' };
+                if (turn <= eTurns + mTurns) return { key: 'mid', label: '中盤' };
+                if (turn <= eTurns + mTurns + lTurns) return { key: 'late', label: '終盤' };
+                return { key: 'final', label: '最終盤' };
+            }
+
+            getRunnerAbilityBreakdown(player, horse, race, stageKey) {
+                const eqList = ['騎手', '装備', '調教'].map(cat => player.equipped?.[cat]).filter(Boolean);
+                const hasItem = (id) => eqList.some(it => it.id === id);
+
+                let distShift = 0;
+                if (hasItem('j_ikezoe')) distShift += 1;
+                if (hasItem('t_hanro')) distShift += 1;
+                if (hasItem('t_shorten')) distShift -= 1;
+
+                const effectiveHorseDist = shiftDistanceCategory(horse.distance, distShift);
+                const raceDistCat = getDistanceCategory(race.distance);
+                const diffSteps = getDistanceDiffPenalty(effectiveHorseDist, raceDistCat);
+                const isDistMatch = diffSteps === 0;
+
+                let distLabel = `適性:${effectiveHorseDist}`;
+                if (distShift !== 0) {
+                    distLabel += `(${horse.distance}${distShift > 0 ? `+${distShift}` : distShift})`;
+                }
+                distLabel += isDistMatch ? ' ◎一致' : ` ${raceDistCat}戦 -${diffSteps}`;
+
+                const styleBonusObj = STYLE_STAGE_BONUSES[horse.style] || { early: 0, mid: 0, late: 0, final: 0 };
+                const styleBonus = styleBonusObj[stageKey] || 0;
+                const isStyleActive = styleBonus > 0;
+                const styleLabel = isStyleActive ? `${horse.style}(+${styleBonus})` : `${horse.style}`;
+
+                const cancelUnruly = hasItem('j_yokoyama_n') || hasItem('e_menko');
+                let unrulyStatus = null;
+                if (horse.isUnruly) {
+                    unrulyStatus = cancelUnruly ? '気性難(打消済)' : '気性難(+3/-5)';
+                }
+
+                const stableInfo = STABLES[player.stable];
+                const isHomeTrack = stableInfo ? stableInfo.homeTracks.includes(race.track) : true;
+                const awayBlocked = hasItem('t_local');
+                let awayStatus = null;
+                if (!isHomeTrack) {
+                    awayStatus = awayBlocked ? '遠征(現地追いで無効化)' : '遠征(最大-2)';
+                }
+
+                const growthBonus = Math.max(0, Number(horse.wins || 0));
+
+                return {
+                    isDistMatch,
+                    distLabel,
+                    isStyleActive,
+                    styleLabel,
+                    unrulyStatus,
+                    cancelUnruly,
+                    awayStatus,
+                    awayBlocked,
+                    growthBonus,
+                    equippedList: eqList
+                };
+            }
+
+            calculateDiceRange(player, horse, race, stageKey) {
+                const eqList = ['騎手', '装備', '調教'].map(cat => player.equipped?.[cat]).filter(Boolean);
+                const hasItem = (id) => eqList.some(it => it.id === id);
+
+                let minVal = horse.baseMin;
+                let maxVal = horse.baseMax + Math.max(0, Number(horse.wins || 0));
+
+                // 距離適性のズレによるペナルティ（1ズレで-1、2ズレで-2、3ズレで-3）
+                let distShift = 0;
+                if (hasItem('j_ikezoe')) distShift += 1;
+                if (hasItem('t_hanro')) distShift += 1;
+                if (hasItem('t_shorten')) distShift -= 1;
+
+                const effectiveHorseDist = shiftDistanceCategory(horse.distance, distShift);
+                const raceDistCat = getDistanceCategory(race.distance);
+                const diffSteps = getDistanceDiffPenalty(effectiveHorseDist, raceDistCat);
+                if (diffSteps > 0) {
+                    minVal -= diffSteps;
+                    maxVal -= diffSteps;
+                }
+
+                // 脚質×展開ボーナス
+                const styleBonusObj = STYLE_STAGE_BONUSES[horse.style] || { early: 0, mid: 0, late: 0, final: 0 };
+                const sBonus = styleBonusObj[stageKey] || 0;
+                if (sBonus > 0) {
+                    minVal += sBonus;
+                    maxVal += sBonus;
+                }
+
+                // 気性難効果
+                if (horse.isUnruly) {
+                    const cancelMinus = hasItem('j_yokoyama_n') || hasItem('e_menko');
+                    maxVal += 3;
+                    if (!cancelMinus) {
+                        minVal -= 5;
+                    }
+                }
+
+                // 遠征ペナルティ
+                const stableInfo = STABLES[player.stable];
+                const isHomeTrack = stableInfo ? stableInfo.homeTracks.includes(race.track) : true;
+                if (!isHomeTrack && !hasItem('t_local')) {
+                    maxVal -= 2;
+                }
+
+                // 騎手・装備・調教アイテム効果
+                if (hasItem('j_fukunaga') && horse.sex === '牝') {
+                    minVal += 3;
+                    maxVal += 3;
+                }
+                if (hasItem('j_sakai') && horse.style === '逃げ') {
+                    minVal += 3;
+                    maxVal += 3;
+                }
+                if (hasItem('j_kawada') && horse.style === '先行') {
+                    minVal += 3;
+                    maxVal += 3;
+                }
+                if (hasItem('j_lemaire') && horse.style === '差し') {
+                    minVal += 3;
+                    maxVal += 3;
+                }
+                if (hasItem('j_take') && horse.style === '追込み') {
+                    minVal += 3;
+                    maxVal += 3;
+                }
+                if (hasItem('j_shibata')) {
+                    minVal += 4;
+                }
+                if (hasItem('j_yokoyama_t') && raceDistCat === '短距離') {
+                    minVal += 3;
+                    maxVal += 3;
+                }
+                if (hasItem('j_tosaki') && raceDistCat === 'マイル') {
+                    minVal += 3;
+                    maxVal += 3;
+                }
+                if (hasItem('j_demuro') && raceDistCat === '中距離') {
+                    minVal += 3;
+                    maxVal += 3;
+                }
+                if (hasItem('j_ebina') && raceDistCat === '長距離') {
+                    minVal += 3;
+                    maxVal += 3;
+                }
+                if (hasItem('e_horseshoe')) {
+                    minVal += 3;
+                }
+                if (hasItem('e_whip')) {
+                    maxVal += 3;
+                    minVal -= 2;
+                }
+                if (hasItem('e_brush')) {
+                    maxVal += 1;
+                    minVal += 2;
+                }
+                if (hasItem('e_feed')) {
+                    maxVal += 2;
+                }
+                if (hasItem('t_gate') && stageKey === 'early') {
+                    maxVal += 3;
+                }
+                if (hasItem('t_course') && stageKey === 'final') {
+                    maxVal += 3;
+                }
+
+                if (maxVal < minVal) {
+                    maxVal = minVal;
+                }
+
+                return { min: minVal, max: maxVal };
+            }
+
+            rollInRange(minVal, maxVal) {
+                const low = Math.min(minVal, maxVal);
+                const high = Math.max(minVal, maxVal);
+                return Math.floor(low + Math.random() * (high - low + 1));
+            }
+
+            async startRace() {
+                if (!this.roomData || this.roomData.hostId !== this.playerId || this.roomData.phase !== 'racing') return;
+                const data = JSON.parse(JSON.stringify(this.roomData));
+                data.raceState.isStarted = true;
+                data.raceState.commentary = 'ゲートオープン！オート進行スタートしました！';
+                await this.saveRoomData(this.roomId, data);
+                this.startRaceLoop();
+            }
+
+            async advanceRaceTurn() {
+                if (!this.roomData || this.roomData.hostId !== this.playerId || this.roomData.phase !== 'racing' || this.isProcessing) return;
+                this.isProcessing = true;
                 try {
                     const data = JSON.parse(JSON.stringify(this.roomData));
+                    const rs = data.raceState;
                     const races = this.getActiveRaces(data);
                     const race = races[data.raceIndex];
-                    const rs = data.raceState;
-
-                    if (rs.turn >= rs.maxTurns) {
-                        this.finalizeRace(data);
-                        await this.saveRoomData(this.roomId, data);
-                        return;
-                    }
 
                     rs.turn += 1;
                     const stage = this.getStageForTurn(rs.turn, race.track, rs.maxTurns);
+                    const meters = rs.turn * 100;
 
-                    // 1. 全員がサイコロを振る
-                    const turnResults = rs.runners.map(runner => {
+                    let highestRoll = -Infinity;
+                    rs.runners.forEach(runner => {
                         const player = data.players.find(p => p.id === runner.playerId);
                         const horse = player.horses.find(h => h.id === runner.horseId);
                         const range = this.calculateDiceRange(player, horse, race, stage.key);
-                        const roll = Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
-                        return { runner, roll, range };
-                    });
-
-                    // 2. このターンの最大出目を特定し、該当する競走馬全員を1マス進める
-                    const maxTurnRoll = Math.max(...turnResults.map(r => r.roll));
-                    const turnWinners = [];
-
-                    turnResults.forEach(({ runner, roll, range }) => {
-                        const moved = roll === maxTurnRoll ? 1 : 0;
+                        const roll = this.rollInRange(range.min, range.max);
                         runner.lastRoll = roll;
-                        runner.lastMoved = moved;
-                        runner.progress += moved;
-                        runner.turnLogs.push({ turn: rs.turn, stage: stage.label, roll, moved, min: range.min, max: range.max });
-                        if (moved > 0) {
-                            turnWinners.push(runner.horseName);
+                        runner.lastMoved = false;
+                        if (roll > highestRoll) {
+                            highestRoll = roll;
                         }
                     });
 
-                    const leaderProg = Math.max(...rs.runners.map(r => r.progress));
-                    const topRunners = rs.runners.filter(r => r.progress === leaderProg).map(r => r.horseName);
-                    const currentMeters = rs.turn * 100;
-                    rs.commentary = `【${currentMeters}m / ${race.distance}m・${stage.label}】最大出目(${maxTurnRoll})の ${turnWinners.join('・')} が1マス前進！現在先頭: ${topRunners.join('・')}（${leaderProg}マス）`;
+                    const movedNames = [];
+                    rs.runners.forEach(runner => {
+                        if (runner.lastRoll === highestRoll) {
+                            runner.progress += 1;
+                            runner.lastMoved = true;
+                            movedNames.push(runner.horseName);
+                        }
+                    });
+
+                    rs.commentary = `${meters}m地点（${stage.label}）：最大出目 ${highestRoll} で ${movedNames.join('・')} が1マス前進！`;
 
                     if (rs.turn >= rs.maxTurns) {
+                        this.stopRaceLoop();
                         this.finalizeRace(data);
                     }
 
@@ -1105,108 +1123,111 @@
                 const races = this.getActiveRaces(data);
                 const race = races[data.raceIndex];
                 const rs = data.raceState;
-
-                // 累計マス数でグループ化し、同着がある場合は最終盤の出目レンジで決着ダイスを振る（写真判定）
                 const photoFinishLogs = [];
-                const sorted = [...rs.runners].sort((a, b) => b.progress - a.progress);
+                const photoFinishHorseIds = new Set();
 
-                // 同着グループの検出とダイス再抽選
-                const tieBreakScores = {};
-                rs.runners.forEach(r => { tieBreakScores[r.playerId] = 0; });
-
-                const progressGroups = {};
-                sorted.forEach(r => {
-                    if (!progressGroups[r.progress]) progressGroups[r.progress] = [];
-                    progressGroups[r.progress].push(r);
+                // 累計マス数でグループ化し、同着があれば最終盤の出目レンジで決着ダイス
+                const groupedByProgress = new Map();
+                rs.runners.forEach(runner => {
+                    if (!groupedByProgress.has(runner.progress)) {
+                        groupedByProgress.set(runner.progress, []);
+                    }
+                    groupedByProgress.get(runner.progress).push(runner);
                 });
 
-                Object.entries(progressGroups).forEach(([prog, group]) => {
-                    if (group.length > 1) {
-                        let unresolved = [...group];
-                        let round = 1;
-                        while (unresolved.length > 1) {
-                            const rolls = unresolved.map(runner => {
-                                const player = data.players.find(p => p.id === runner.playerId);
-                                const horse = player.horses.find(h => h.id === runner.horseId);
-                                const finalRange = this.calculateDiceRange(player, horse, race, 'final');
-                                const roll = Math.floor(Math.random() * (finalRange.max - finalRange.min + 1)) + finalRange.min;
-                                return { runner, roll, range: finalRange };
-                            });
+                const sortedProgressKeys = [...groupedByProgress.keys()].sort((a, b) => b - a);
+                const finalOrderedRunners = [];
 
-                            photoFinishLogs.push({
-                                progress: Number(prog),
-                                round,
-                                entries: rolls.map(x => ({
-                                    horseName: x.runner.horseName,
-                                    playerName: x.runner.playerName,
-                                    playerColor: x.runner.playerColor,
-                                    roll: x.roll,
-                                    min: x.range.min,
-                                    max: x.range.max
-                                }))
-                            });
+                sortedProgressKeys.forEach(prog => {
+                    const group = groupedByProgress.get(prog);
+                    if (group.length === 1) {
+                        finalOrderedRunners.push(group[0]);
+                        return;
+                    }
 
-                            // 各馬にスコアを加算（上位ほど大きな重みを付けて順位を確定）
-                            const distinctRolls = [...new Set(rolls.map(r => r.roll))].sort((a, b) => b - a);
-                            rolls.forEach(item => {
-                                const rankInRound = distinctRolls.indexOf(item.roll);
-                                tieBreakScores[item.runner.playerId] += (distinctRolls.length - rankInRound) * Math.pow(10, 5 - round);
-                            });
+                    group.forEach(g => photoFinishHorseIds.add(g.horseId));
+                    let round = 1;
+                    let contenders = [...group];
 
-                            // まだ同点ダイスが残っている馬だけを抽出して続行
-                            const rollCounts = {};
-                            rolls.forEach(r => { rollCounts[r.roll] = (rollCounts[r.roll] || 0) + 1; });
-                            unresolved = rolls.filter(r => rollCounts[r.roll] > 1).map(r => r.runner);
-                            round += 1;
-                            if (round > 10) break; // 安全弁
+                    while (contenders.length > 1 && round <= 10) {
+                        const entries = contenders.map(c => {
+                            const player = data.players.find(p => p.id === c.playerId);
+                            const horse = player.horses.find(h => h.id === c.horseId);
+                            const range = this.calculateDiceRange(player, horse, race, 'final');
+                            const roll = this.rollInRange(range.min, range.max);
+                            return {
+                                runner: c,
+                                horseName: c.horseName,
+                                min: range.min,
+                                max: range.max,
+                                roll
+                            };
+                        });
+
+                        photoFinishLogs.push({
+                            progress: prog,
+                            round,
+                            entries: entries.map(e => ({
+                                horseName: e.horseName,
+                                min: e.min,
+                                max: e.max,
+                                roll: e.roll
+                            }))
+                        });
+
+                        const maxTieRoll = Math.max(...entries.map(e => e.roll));
+                        const topGroup = entries.filter(e => e.roll === maxTieRoll).map(e => e.runner);
+                        const restGroup = entries.filter(e => e.roll < maxTieRoll).sort((a, b) => b.roll - a.roll).map(e => e.runner);
+
+                        if (topGroup.length === 1) {
+                            finalOrderedRunners.push(topGroup[0]);
+                            contenders = restGroup;
+                            if (contenders.length === 1) {
+                                finalOrderedRunners.push(contenders[0]);
+                                contenders = [];
+                            }
+                        } else {
+                            contenders = topGroup;
                         }
+                        round++;
+                    }
+
+                    if (contenders.length > 0) {
+                        finalOrderedRunners.push(...contenders);
                     }
                 });
 
-                const finalSorted = [...rs.runners].sort((a, b) => {
-                    if (b.progress !== a.progress) return b.progress - a.progress;
-                    const diff = (tieBreakScores[b.playerId] || 0) - (tieBreakScores[a.playerId] || 0);
-                    if (diff !== 0) return diff;
-                    return Math.random() - 0.5;
-                });
-
-                const standings = finalSorted.map((runner, idx) => {
+                const standings = finalOrderedRunners.map((runner, idx) => {
                     const rank = idx + 1;
-                    let basePrize = rank <= 3 ? race.prizes[idx] : 0;
-                    const finalPrize = runner.hasKoban ? basePrize * 2 : basePrize;
-
                     const player = data.players.find(p => p.id === runner.playerId);
                     const horse = player.horses.find(h => h.id === runner.horseId);
+                    const basePrize = race.prizes[idx] || 0;
+                    const kobanApplied = player.equipped?.['装備']?.id === 'e_koban' && basePrize > 0;
+                    const prize = kobanApplied ? basePrize * 2 : basePrize;
 
-                    if (finalPrize > 0) {
-                        player.money += finalPrize;
-                    }
+                    player.money += prize;
                     if (rank === 1) {
                         player.wins += 1;
                         player.wonRaceNames.push(race.name);
-                        horse.wins += 1;
+                        horse.wins = (horse.wins || 0) + 1;
+                        horse.wonRaceNames = horse.wonRaceNames || [];
                         horse.wonRaceNames.push(race.name);
                     }
 
-                    const hadPhotoFinish = photoFinishLogs.some(log => log.entries.some(e => e.horseName === runner.horseName));
+                    // 装着アイテムはレース終了後に消費
+                    player.equipped = { '騎手': null, '装備': null, '調教': null };
 
                     return {
                         rank,
-                        playerId: runner.playerId,
-                        playerName: runner.playerName,
-                        playerColor: runner.playerColor,
-                        horseName: runner.horseName,
-                        sex: runner.sex,
+                        playerId: player.id,
+                        playerName: player.name,
+                        horseId: horse.id,
+                        horseName: horse.name,
                         progress: runner.progress,
-                        prize: finalPrize,
-                        kobanApplied: runner.hasKoban && basePrize > 0,
-                        hadPhotoFinish
+                        prize,
+                        kobanApplied,
+                        hadPhotoFinish: photoFinishHorseIds.has(horse.id)
                     };
-                });
-
-                // レース後、装備していたアイテムを消費（リセット）
-                data.players.forEach(p => {
-                    p.equipped = { '騎手': null, '装備': null, '調教': null };
                 });
 
                 data.lastRaceResult = {
@@ -1214,7 +1235,7 @@
                     standings,
                     photoFinishLogs
                 };
-                data.phase = 'race_result';
+                data.phase = 'result';
             }
 
             async goToNextRace() {
@@ -1226,356 +1247,309 @@
                     data.raceIndex += 1;
                     this.setupAuctionPhase(data);
                 } else {
-                    // 全レース終了 -> TURF DICE DERBY AWARDS 集計
                     this.calculateFinalAwards(data);
+                    data.phase = 'awards';
                 }
                 await this.saveRoomData(this.roomId, data);
             }
 
-            // ==========================================
-            // 7. TURF DICE DERBY AWARDS 集計
-            // ==========================================
             calculateFinalAwards(data) {
                 const awards = [];
-                const players = data.players;
-
-                // 1. 最多勝利オーナー（+5億円）
-                const maxOwnerWins = Math.max(...players.map(p => p.wins));
-                if (maxOwnerWins > 0) {
-                    const topOwners = players.filter(p => p.wins === maxOwnerWins);
-                    topOwners.forEach(owner => {
-                        owner.money += 50000;
-                    });
-                    awards.push({
-                        title: '🏆 最多勝利オーナー',
-                        prize: 50000,
-                        winners: topOwners.map(o => `${o.name}（${maxOwnerWins}勝）`).join(' / ')
-                    });
-                }
-
-                // 2. 最優秀競走馬（+5億円）
                 const allHorses = [];
-                players.forEach(p => {
+                data.players.forEach(p => {
                     p.horses.forEach(h => {
-                        allHorses.push({ owner: p, horse: h });
+                        allHorses.push({ player: p, horse: h });
                     });
                 });
-                const maxHorseWins = Math.max(...allHorses.map(item => item.horse.wins));
-                if (maxHorseWins > 0) {
-                    const topHorses = allHorses.filter(item => item.horse.wins === maxHorseWins);
-                    topHorses.forEach(item => {
-                        item.owner.money += 50000;
-                    });
+
+                // 最多G1勝利馬アワード
+                const maxWins = Math.max(0, ...allHorses.map(x => x.horse.wins || 0));
+                if (maxWins > 0) {
+                    const topHorses = allHorses.filter(x => (x.horse.wins || 0) === maxWins);
+                    topHorses.forEach(x => { x.player.money += 10000; });
                     awards.push({
-                        title: '🐴 最優秀競走馬',
-                        prize: 50000,
-                        winners: topHorses.map(item => `${item.horse.name}（所有: ${item.owner.name} / ${maxHorseWins}勝）`).join(' / ')
+                        title: '🏅 最優秀G1ホース賞',
+                        prize: 10000,
+                        winners: topHorses.map(x => `${x.horse.name}（${x.player.name}・${maxWins}勝）`).join(' / ')
                     });
                 }
 
-                // オーナー単位での制覇判定ヘルパー
-                const checkOwnerSweep = (title, requiredRaces, prize) => {
-                    const matched = players.filter(p => requiredRaces.every(rName => p.wonRaceNames.includes(rName)));
-                    if (matched.length > 0) {
-                        matched.forEach(o => { o.money += prize; });
-                        awards.push({
-                            title,
-                            prize,
-                            winners: matched.map(o => o.name).join(' / ')
-                        });
-                    }
-                };
-
-                // 同一競走馬での制覇判定ヘルパー
-                const checkHorseSweep = (title, requiredRaces, prize) => {
-                    const matched = allHorses.filter(item => requiredRaces.every(rName => item.horse.wonRaceNames.includes(rName)));
-                    if (matched.length > 0) {
-                        matched.forEach(item => { item.owner.money += prize; });
-                        awards.push({
-                            title,
-                            prize,
-                            winners: matched.map(item => `${item.horse.name}（所有: ${item.owner.name}）`).join(' / ')
-                        });
-                    }
-                };
-
-                // 3. スプリントの覇者（高松宮記念・スプリンターズS同一オーナー制覇：+3億円）
-                checkOwnerSweep('⚡ スプリントの覇者', ['高松宮記念', 'スプリンターズS'], 30000);
-
-                // 4. マイルの皇帝（安田記念・マイルCS同一オーナー制覇：+3億円）
-                checkOwnerSweep('👑 マイルの皇帝', ['安田記念', 'マイルチャンピオンシップ'], 30000);
-
-                // 5. 牡馬クラシック3冠（皐月賞・日本ダービー・菊花賞同一競走馬制覇：+5億円）
-                checkHorseSweep('🔱 牡馬クラシック3冠', ['皐月賞', '日本ダービー', '菊花賞'], 50000);
-
-                // 6. 牝馬クラシック3冠（桜花賞・オークス・秋華賞同一競走馬制覇：+3億円）
-                checkHorseSweep('🌹 牝馬クラシック3冠', ['桜花賞', 'オークス', '秋華賞'], 30000);
-
-                // 7. 牝馬路線完全制覇（阪神JF・桜花賞・オークス・秋華賞・ヴィクトリアM・エリザベス女王杯同一競走馬制覇：+5億円）
-                checkHorseSweep('👸 牝馬路線完全制覇', ['阪神ジュベナイルフィリーズ', '桜花賞', 'オークス', '秋華賞', 'ヴィクトリアマイル', 'エリザベス女王杯'], 50000);
-
-                // 8. 春古馬3冠（大阪杯・天皇賞（春）・宝塚記念同一競走馬制覇：+5億円）
-                checkHorseSweep('🌸 春古馬3冠', ['大阪杯', '天皇賞（春）', '宝塚記念'], 50000);
-
-                // 9. 秋古馬3冠（天皇賞（秋）・ジャパンカップ・有馬記念同一競走馬制覇：+5億円）
-                checkHorseSweep('🍁 秋古馬3冠', ['天皇賞（秋）', 'ジャパンカップ', '有馬記念'], 50000);
+                // 最多G1オーナー賞
+                const maxOwnerWins = Math.max(0, ...data.players.map(p => p.wins || 0));
+                if (maxOwnerWins > 0) {
+                    const topOwners = data.players.filter(p => (p.wins || 0) === maxOwnerWins);
+                    topOwners.forEach(p => { p.money += 10000; });
+                    awards.push({
+                        title: '👑 ベストオーナー賞',
+                        prize: 10000,
+                        winners: topOwners.map(p => `${p.name}（G1 ${maxOwnerWins}勝）`).join(' / ')
+                    });
+                }
 
                 data.finalAwards = awards;
-                data.phase = 'final_awards';
             }
 
-            leaveRoom() {
+            startRaceLoop() {
+                this.stopRaceLoop();
+                this.raceInterval = setInterval(() => {
+                    if (
+                        this.roomData &&
+                        this.roomData.hostId === this.playerId &&
+                        this.roomData.phase === 'racing' &&
+                        this.roomData.raceState?.isStarted
+                    ) {
+                        this.advanceRaceTurn();
+                    } else {
+                        this.stopRaceLoop();
+                    }
+                }, 3000);
+            }
+
+            stopRaceLoop() {
                 if (this.raceInterval) {
                     clearInterval(this.raceInterval);
                     this.raceInterval = null;
                 }
-                if (this.unsubscribeRoom) {
-                    this.unsubscribeRoom();
-                    this.unsubscribeRoom = null;
-                }
-                this.roomId = null;
-                this.roomData = null;
-                this.renderGame();
-            }
-
-            syncAutoRaceTimer(data) {
-                const isHost = data && data.hostId === this.playerId;
-                const isRacing = data && data.phase === 'racing' && data.raceState && data.raceState.turn < data.raceState.maxTurns;
-
-                if (isHost && isRacing) {
-                    if (!this.raceInterval) {
-                        this.raceInterval = setInterval(() => {
-                            if (this.roomData && this.roomData.phase === 'racing' && this.roomData.hostId === this.playerId) {
-                                this.advanceRaceTurn();
-                            } else {
-                                clearInterval(this.raceInterval);
-                                this.raceInterval = null;
-                            }
-                        }, 3000);
-                    }
-                } else if (this.raceInterval) {
-                    clearInterval(this.raceInterval);
-                    this.raceInterval = null;
-                }
             }
 
             // ==========================================
-            // 8. UI レンダリング
+            // 7. 画面描画（ルーター＆各フェーズ）
             // ==========================================
             renderGame() {
-                const headerStatus = document.getElementById('header-status');
-                const main = document.getElementById('main-content');
-                if (!headerStatus || !main) return;
-
-                this.syncAutoRaceTimer(this.roomData);
+                const mainEl = document.getElementById('main-content');
+                const headerStatusEl = document.getElementById('header-status');
+                if (!mainEl) return;
 
                 if (!this.roomData) {
-                    headerStatus.innerHTML = `
-                        <span class="px-2.5 py-1 rounded-full text-xs font-bold ${firebaseDb ? 'bg-emerald-800 text-emerald-200 border border-emerald-500/40' : 'bg-amber-900/80 text-amber-200'}">
-                            ${firebaseDb ? '🟢 オンライン同期対応' : '🟡 ローカルモード'}
-                        </span>
-                    `;
-                    main.innerHTML = this.renderTitleScreen();
+                    this.stopRaceLoop();
+                    if (headerStatusEl) {
+                        headerStatusEl.innerHTML = `<span class="text-xs text-emerald-300 font-bold">ロビー未参加</span>`;
+                    }
+                    mainEl.innerHTML = this.renderTitleScreen();
                     return;
                 }
 
                 const data = this.roomData;
-                const races = this.getActiveRaces(data);
-                const currentRace = races[data.raceIndex];
                 const me = data.players.find(p => p.id === this.playerId);
 
-                headerStatus.innerHTML = `
-                    <div class="flex flex-wrap items-center gap-2">
-                        <span class="bg-slate-800/90 border border-slate-600 px-2.5 py-1 rounded-lg text-xs font-mono">
-                            部屋ID: <strong class="text-amber-300 select-all">${data.roomId}</strong>
+                if (data.phase === 'racing' && data.raceState?.isStarted && data.hostId === this.playerId && !this.raceInterval) {
+                    this.startRaceLoop();
+                } else if (data.phase !== 'racing') {
+                    this.stopRaceLoop();
+                }
+
+                if (headerStatusEl) {
+                    headerStatusEl.innerHTML = `
+                        <span class="bg-emerald-900 border border-emerald-600 px-2.5 py-1 rounded-lg font-bold text-emerald-200">
+                            部屋ID: <strong class="text-amber-300">${data.roomId}</strong>
                         </span>
-                        ${currentRace && data.phase !== 'lobby' && data.phase !== 'final_awards' ? `
-                            <span class="bg-emerald-900 border border-emerald-600 px-2.5 py-1 rounded-lg text-xs font-bold">
-                                第${data.raceIndex + 1}/${races.length}戦: ${currentRace.name}
-                            </span>
-                        ` : ''}
                         ${me ? `
-                            <span class="bg-amber-950 border border-amber-500/60 px-2.5 py-1 rounded-lg text-xs font-bold text-amber-300">
+                            <span class="bg-slate-900 border border-amber-500/50 px-2.5 py-1 rounded-lg font-black text-amber-300">
                                 💰 ${formatMoney(me.money)}
                             </span>
                         ` : ''}
-                        <button onclick="window.gameApp.leaveRoom()" class="bg-red-950/80 hover:bg-red-800 border border-red-700 px-2.5 py-1 rounded-lg text-xs text-red-200 transition">
-                            退室
+                        <button onclick="window.gameApp.leaveRoom()"
+                            class="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 px-2.5 py-1 rounded-lg text-xs font-bold">
+                            退出
                         </button>
-                    </div>
-                `;
+                    `;
+                }
 
                 switch (data.phase) {
                     case 'lobby':
-                        main.innerHTML = this.renderLobby(data);
+                        mainEl.innerHTML = this.renderLobby(data);
                         break;
                     case 'auction':
-                        main.innerHTML = this.renderAuction(data);
+                        mainEl.innerHTML = this.renderAuction(data);
                         break;
                     case 'paddock':
-                        main.innerHTML = this.renderPaddock(data);
+                        mainEl.innerHTML = this.renderPaddock(data);
                         break;
                     case 'racing':
-                        main.innerHTML = this.renderRacing(data);
+                        mainEl.innerHTML = this.renderRacing(data);
                         break;
-                    case 'race_result':
-                        main.innerHTML = this.renderRaceResult(data);
+                    case 'result':
+                        mainEl.innerHTML = this.renderRaceResult(data);
                         break;
-                    case 'final_awards':
-                        main.innerHTML = this.renderFinalAwards(data);
+                    case 'awards':
+                        mainEl.innerHTML = this.renderFinalAwards(data);
                         break;
                     default:
-                        main.innerHTML = this.renderTitleScreen();
+                        mainEl.innerHTML = this.renderLobby(data);
                 }
             }
 
             renderTitleScreen() {
                 return `
-                    <div class="max-w-3xl mx-auto space-y-6">
-                        <div class="turf-pattern border border-emerald-700/70 rounded-2xl p-6 sm:p-8 shadow-2xl text-center">
-                            <div class="inline-block bg-amber-500/20 border border-amber-400/50 text-amber-300 text-xs font-bold px-3 py-1 rounded-full mb-3">
-                                ONLINE & CPU MULTIPLAYER BOARD GAME
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                        <!-- 左：新規ルーム作成 -->
+                        <div class="lg:col-span-7 bg-slate-900 border border-emerald-700/70 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4">
+                            <div class="border-b border-slate-800 pb-3">
+                                <span class="text-xs font-black text-amber-400 tracking-wider">NEW TOURNAMENT</span>
+                                <h2 class="text-xl sm:text-2xl font-black text-white">新規ルームを作成</h2>
                             </div>
-                            <h2 class="text-2xl sm:text-4xl font-black text-white tracking-tight mb-2">
-                                頂点のG1制覇を目指せ！
-                            </h2>
-                            <p class="text-sm text-emerald-200 max-w-xl mx-auto">
-                                オークションで名騎手・装備・調教を競り落とし、距離適性と展開を読み切って愛馬をG1制覇へ導くオーナーズ・ダイスゲーム！
-                            </p>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-300 mb-1">オーナー名</label>
+                                    <input id="owner-name-input" type="text" value="オーナー1" maxlength="12"
+                                        class="w-full bg-slate-800 border border-slate-700 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-sm font-bold text-white outline-none">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-300 mb-1">所属トレセン</label>
+                                    <select id="owner-stable-select"
+                                        class="w-full bg-slate-800 border border-slate-700 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-sm font-bold text-white outline-none">
+                                        <option value="美浦">美浦トレセン（関東・東京/中山拠点）</option>
+                                        <option value="栗東">栗東トレセン（関西・京都/阪神拠点）</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="space-y-2">
+                                <div class="text-xs font-bold text-slate-300">ツアーモード選択</div>
+                                <div class="space-y-2 max-h-64 overflow-y-auto pr-1">
+                                    ${Object.values(GAME_MODES).map((m, idx) => `
+                                        <label class="block cursor-pointer bg-slate-800/90 hover:bg-slate-800 border ${m.isSecret ? 'border-purple-500/50' : 'border-slate-700'} rounded-xl p-3 transition">
+                                            <div class="flex items-start gap-2.5">
+                                                <input type="radio" name="game-mode" value="${m.id}" ${idx === 0 ? 'checked' : ''} class="mt-1 accent-amber-400">
+                                                <div>
+                                                    <div class="text-xs sm:text-sm font-black ${m.isSecret ? 'text-purple-300' : 'text-white'}">${m.label}</div>
+                                                    <div class="text-[11px] text-slate-400 mt-0.5">${m.desc}</div>
+                                                </div>
+                                            </div>
+                                        </label>
+                                    `).join('')}
+                                </div>
+
+                                <label class="flex items-center justify-between bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2.5 cursor-pointer">
+                                    <div>
+                                        <div class="text-xs sm:text-sm font-black text-white">🤖 空き枠にCPUを補充する</div>
+                                        <div class="text-[11px] text-slate-400">OFFにすると人間プレイヤーのみ（1〜4人）で対戦します</div>
+                                    </div>
+                                    <input id="enable-cpu-checkbox" type="checkbox" checked class="w-5 h-5 accent-amber-400 cursor-pointer">
+                                </label>
+                            </div>
+
+                            <button onclick="window.gameApp.createRoom()"
+                                class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black py-3.5 rounded-xl shadow-lg transition transform active:scale-95">
+                                部屋を作成してロビーへ
+                            </button>
                         </div>
 
-                        <div class="bg-slate-900/90 border border-slate-700 rounded-2xl p-5 sm:p-6 shadow-xl space-y-5">
-                            <h3 class="text-lg font-bold text-amber-400 border-b border-slate-700 pb-2">1. オーナー登録</h3>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <!-- 右：既存ルームに参加 -->
+                        <div class="lg:col-span-5 bg-slate-900 border border-slate-700 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4">
+                            <div class="border-b border-slate-800 pb-3">
+                                <span class="text-xs font-black text-emerald-400 tracking-wider">JOIN ROOM</span>
+                                <h2 class="text-xl sm:text-2xl font-black text-white">部屋IDを入力して参加</h2>
+                            </div>
+
+                            <div class="space-y-3">
                                 <div>
-                                    <label class="block text-xs font-bold text-slate-300 mb-1.5">オーナー名</label>
-                                    <input id="owner-name-input" type="text" maxlength="12" placeholder="例：サンデーオーナー"
-                                        class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-400">
+                                    <label class="block text-xs font-bold text-slate-300 mb-1">6桁の部屋ID</label>
+                                    <input id="join-room-id-input" type="text" placeholder="例: 123456" maxlength="6"
+                                        class="w-full bg-slate-800 border border-slate-700 focus:border-emerald-400 rounded-xl px-3.5 py-2.5 text-lg font-mono font-black text-amber-300 tracking-widest outline-none">
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-bold text-slate-300 mb-1.5">所属トレーニングセンター（輸送競馬）</label>
-                                    <select id="owner-stable-select" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-400">
-                                        <option value="美浦">美浦所属（関東：東京・中山がホーム）</option>
-                                        <option value="栗東">栗東所属（関西：京都・阪神がホーム）</option>
+                                    <label class="block text-xs font-bold text-slate-300 mb-1">あなたのオーナー名</label>
+                                    <input id="join-owner-name-input" type="text" value="ゲストオーナー" maxlength="12"
+                                        class="w-full bg-slate-800 border border-slate-700 focus:border-emerald-400 rounded-xl px-3.5 py-2.5 text-sm font-bold text-white outline-none">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-300 mb-1">所属トレセン</label>
+                                    <select id="join-owner-stable-select"
+                                        class="w-full bg-slate-800 border border-slate-700 focus:border-emerald-400 rounded-xl px-3.5 py-2.5 text-sm font-bold text-white outline-none">
+                                        <option value="栗東">栗東トレセン（関西・京都/阪神拠点）</option>
+                                        <option value="美浦">美浦トレセン（関東・東京/中山拠点）</option>
                                     </select>
-                                    <p class="text-[11px] text-slate-400 mt-1">※ホーム以外の競馬場への遠征時は最大出目が -2 されます</p>
                                 </div>
                             </div>
 
-                            <div class="pt-2">
-                                <h3 class="text-lg font-bold text-amber-400 border-b border-slate-700 pb-2 mb-3">2. 新規ルーム作成（ツアー選択）</h3>
-                                <div class="space-y-3 mb-4">
-                                    <div>
-                                        <div class="text-xs font-bold text-emerald-300 mb-1.5">通常モード</div>
-                                        <div class="grid grid-cols-1 gap-2">
-                                            ${Object.values(GAME_MODES).filter(m => !m.isSecret).map((m, idx) => `
-                                                <label class="flex items-start gap-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-600 rounded-xl p-3 cursor-pointer transition">
-                                                    <input type="radio" name="game-mode" value="${m.id}" ${idx === 0 ? 'checked' : ''} class="mt-1 accent-amber-400">
-                                                    <div>
-                                                        <div class="font-bold text-sm text-white">${m.label}</div>
-                                                        <div class="text-xs text-slate-300">${m.desc}</div>
-                                                    </div>
-                                                </label>
-                                            `).join('')}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div class="text-xs font-bold text-purple-300 mb-1.5">🕵️ 裏モード（適性・脚質・気性難・出目レンジ非公開＆推理メモ搭載）</div>
-                                        <div class="grid grid-cols-1 gap-2">
-                                            ${Object.values(GAME_MODES).filter(m => m.isSecret).map((m) => `
-                                                <label class="flex items-start gap-3 bg-purple-950/40 hover:bg-purple-950/60 border border-purple-700/70 rounded-xl p-3 cursor-pointer transition">
-                                                    <input type="radio" name="game-mode" value="${m.id}" class="mt-1 accent-purple-400">
-                                                    <div>
-                                                        <div class="font-bold text-sm text-purple-200">${m.label}</div>
-                                                        <div class="text-xs text-slate-300">${m.desc}</div>
-                                                    </div>
-                                                </label>
-                                            `).join('')}
-                                        </div>
-                                    </div>
-                                </div>
-                                <button onclick="window.gameApp.createRoom()"
-                                    class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black py-3.5 rounded-xl shadow-lg transition transform active:scale-[0.99]">
-                                    🏇 新しい部屋を作成してオーナーになる
-                                </button>
-                            </div>
-
-                            <div class="pt-3 border-t border-slate-700">
-                                <h3 class="text-sm font-bold text-emerald-400 mb-2">または、友達の部屋に参加する</h3>
-                                <div class="flex flex-col sm:flex-row gap-2">
-                                    <input id="join-room-input" type="text" maxlength="6" placeholder="6桁の部屋IDを入力"
-                                        class="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-white font-mono tracking-widest focus:outline-none focus:border-emerald-400">
-                                    <button onclick="window.gameApp.joinRoom()"
-                                        class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-2.5 rounded-xl shadow transition">
-                                        部屋に参加
-                                    </button>
-                                </div>
-                            </div>
+                            <button onclick="window.gameApp.joinRoom()"
+                                class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 font-black py-3.5 rounded-xl shadow-lg transition transform active:scale-95">
+                                部屋に参加する
+                            </button>
                         </div>
                     </div>
                 `;
             }
 
             renderLobby(data) {
-                const isHost = data.hostId === this.playerId;
                 const modeInfo = GAME_MODES[data.mode] || GAME_MODES.classic;
+                const isHost = data.hostId === this.playerId;
+                const enableCpu = data.enableCpu !== false;
 
                 return `
-                    <div class="max-w-3xl mx-auto bg-slate-900/95 border border-emerald-700/60 rounded-2xl p-6 shadow-2xl space-y-6">
-                        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-700 pb-4">
+                    <div class="max-w-4xl mx-auto bg-slate-900 border border-emerald-700/70 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-6">
+                        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
                             <div>
-                                <span class="text-xs font-bold text-emerald-400">${modeInfo.label}</span>
-                                <h2 class="text-2xl font-black text-white">待機ロビー</h2>
+                                <div class="text-xs font-black text-amber-400 tracking-wider">TOURNAMENT LOBBY</div>
+                                <h2 class="text-xl sm:text-2xl font-black text-white mt-0.5">${modeInfo.label}</h2>
+                                <p class="text-xs text-slate-400 mt-1">${modeInfo.desc}</p>
                             </div>
-                            <div class="bg-slate-800 border border-amber-500/50 rounded-xl px-4 py-2 text-center">
-                                <div class="text-[11px] text-slate-400">招待用 部屋ID</div>
-                                <div class="text-2xl font-mono font-black text-amber-400 tracking-widest select-all">${data.roomId}</div>
+                            <div class="bg-slate-800 border border-amber-500/50 rounded-xl px-4 py-2.5 text-center">
+                                <div class="text-[10px] font-bold text-slate-400">招待用 部屋ID</div>
+                                <div class="text-2xl font-mono font-black text-amber-300 tracking-widest">${data.roomId}</div>
                             </div>
                         </div>
 
-                        <div class="space-y-3">
-                            <h3 class="text-sm font-bold text-slate-300">参加オーナー（${data.players.length} / 4名）</h3>
+                        <!-- 参加プレイヤー一覧 -->
+                        <div class="space-y-2.5">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-black text-emerald-300">参加オーナー（${data.players.length} / 4人）</h3>
+                                <span class="text-xs text-slate-400">全${modeInfo.races.length}戦スケジュール</span>
+                            </div>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                ${[0, 1, 2, 3].map(idx => {
-                                    const p = data.players[idx];
-                                    if (!p) {
-                                        return `
-                                            <div class="border border-dashed border-slate-700 rounded-xl p-4 text-slate-500 text-sm flex items-center justify-center">
-                                                空き枠（開始時にCPUが自動参加）
-                                            </div>
-                                        `;
-                                    }
-                                    return `
-                                        <div class="bg-slate-800 border border-slate-600 rounded-xl p-4 flex items-center justify-between">
-                                            <div class="flex items-center gap-3">
-                                                <span class="w-4 h-4 rounded-full" style="background-color: ${p.color}"></span>
-                                                <div>
-                                                    <div class="font-bold text-white">${p.name} ${p.id === data.hostId ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">HOST</span>' : ''}</div>
-                                                    <div class="text-xs text-slate-400">${p.stable}所属 ／ 所有馬 ${p.horses.length}頭</div>
+                                ${data.players.map((p, idx) => `
+                                    <div class="bg-slate-800/90 border border-slate-700 rounded-xl p-3.5 flex items-center justify-between">
+                                        <div class="flex items-center gap-3">
+                                            <span class="w-3.5 h-3.5 rounded-full" style="background-color:${p.color || PLAYER_COLORS[idx % PLAYER_COLORS.length]}"></span>
+                                            <div>
+                                                <div class="font-black text-white text-sm flex items-center gap-1.5">
+                                                    <span>${p.name}</span>
+                                                    ${p.id === data.hostId ? '<span class="text-[10px] bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded font-black">HOST</span>' : ''}
+                                                    ${p.isCpu ? '<span class="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-bold">CPU</span>' : ''}
                                                 </div>
+                                                <div class="text-xs text-slate-400">${p.stable}所属 ／ 初期資金 ${formatMoney(p.money)}</div>
                                             </div>
-                                            <span class="text-xs font-bold text-emerald-400">準備OK</span>
                                         </div>
-                                    `;
-                                }).join('')}
+                                        <span class="text-xs font-bold text-emerald-400">待機中</span>
+                                    </div>
+                                `).join('')}
                             </div>
                         </div>
 
-                        <div class="bg-emerald-950/60 border border-emerald-800 rounded-xl p-4 text-xs text-emerald-200 space-y-1">
-                            <p class="font-bold text-amber-300">📋 ルール概要</p>
-                            <p>• 牡馬基本出目：<strong>10〜20</strong> ／ 牝馬基本出目：<strong>13〜18</strong>（気性難は最大+3・最小-5）</p>
-                            <p>• 距離適性一致で<strong>最大・最小+2</strong>、不一致で<strong>-1</strong>。さらに脚質が展開と一致すると<strong>最大・最小+2</strong>！</p>
-                            ${modeInfo.isSecret ? '<p class="text-purple-300 font-bold">• 🕵️ 【裏モード有効】各馬の適正距離・脚質・気性難および出目レンジはマスクされます。実際の出目から推理し、パドックのメモ機能を活用してください！</p>' : ''}
+                        <!-- レーススケジュール一覧 -->
+                        <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-2">
+                            <div class="text-xs font-black text-amber-300">🗓️ 開催G1レース一覧（100m = 1ターン）</div>
+                            <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                                ${modeInfo.races.map((r, i) => `
+                                    <span class="text-[11px] bg-slate-800 border border-slate-700 text-slate-200 px-2.5 py-1 rounded-lg">
+                                        ${i + 1}. ${r.name}（${r.track}・芝${r.distance}m/${Math.max(1, Math.floor(r.distance / 100))}T）
+                                    </span>
+                                `).join('')}
+                            </div>
                         </div>
 
+                        <!-- ホスト操作パネル -->
                         ${isHost ? `
-                            <button onclick="window.gameApp.startGame()"
-                                class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black py-4 rounded-xl text-lg shadow-xl transition">
-                                🚀 ツアー開幕（不足枠はCPUを補充して開始）
-                            </button>
+                            <div class="space-y-4 pt-2 border-t border-slate-800">
+                                <label class="flex items-center justify-between bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-3 cursor-pointer">
+                                    <div>
+                                        <div class="text-sm font-black text-white">🤖 空き枠にCPUを補充する</div>
+                                        <div class="text-xs text-slate-400">現在 ${data.players.length} 人。チェックを外すとCPUなしで開始できます。</div>
+                                    </div>
+                                    <input type="checkbox" ${enableCpu ? 'checked' : ''} onchange="window.gameApp.toggleCpuSetting(this.checked)"
+                                        class="w-5 h-5 accent-amber-400 cursor-pointer">
+                                </label>
+
+                                <button onclick="window.gameApp.startGame()"
+                                    class="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black py-4 rounded-xl text-base sm:text-lg shadow-xl transition transform active:scale-95">
+                                    🏁 ツアーを開始する（第1戦オークションへ）
+                                </button>
+                            </div>
                         ` : `
-                            <div class="text-center py-3 bg-slate-800 rounded-xl text-sm text-amber-300 font-bold animate-pulse">
-                                ホストがゲームを開始するのを待っています...
+                            <div class="text-center text-sm text-amber-300 font-bold py-3.5 bg-slate-800/80 border border-slate-700 rounded-xl animate-pulse">
+                                ホストがツアーを開始するのを待っています...
                             </div>
                         `}
                     </div>
@@ -1584,315 +1558,316 @@
 
             renderAuction(data) {
                 const races = this.getActiveRaces(data);
-                const nextRace = races[data.raceIndex];
-                const distCat = getDistanceCategory(nextRace.distance);
-                const auc = data.auction;
+                const race = races[data.raceIndex];
+                const auc = data.auction || { items: [], itemIndex: 0, history: [] };
                 const currentItem = auc.items[auc.itemIndex];
                 const me = data.players.find(p => p.id === this.playerId);
-                const hasBid = me && me.auctionBid !== null;
+                const hasBid = me ? me.auctionBid !== null : true;
+                const maxBid = me ? me.money : 0;
+
+                if (!hasBid && this.bidAmount > maxBid) {
+                    this.bidAmount = Math.floor(maxBid / 1000) * 1000;
+                }
 
                 return `
                     <div class="max-w-4xl mx-auto space-y-5">
-                        <!-- 次走予告バナー -->
-                        <div class="bg-emerald-950/90 border border-emerald-700 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+                        <div class="bg-slate-900 border border-amber-500/60 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-wrap items-center justify-between gap-2">
                             <div>
-                                <span class="text-xs font-bold text-amber-400">NEXT RACE（第${data.raceIndex + 1}戦）</span>
-                                <h2 class="text-xl font-black text-white">${nextRace.name} ${nextRace.fillyOnly ? '<span class="text-xs bg-pink-600 text-white px-2 py-0.5 rounded-full ml-1">牝馬限定</span>' : ''}</h2>
-                                <p class="text-xs text-emerald-200">${nextRace.track} ／ 芝${nextRace.distance.toLocaleString()}m（<strong>${distCat}</strong>） ／ 1着賞金: ${formatMoney(nextRace.prizes[0])}</p>
+                                <span class="text-xs font-black text-amber-400">PRE-RACE ITEM AUCTION（第${data.raceIndex + 1}戦 前）</span>
+                                <h2 class="text-lg sm:text-xl font-black text-white">次走：${race.name}（${race.track}・芝${race.distance}m）</h2>
                             </div>
-                            <div class="text-right text-xs text-slate-300">
-                                <div>${TRACK_PROFILES[nextRace.track]?.desc || ''}</div>
-                            </div>
+                            <span class="bg-amber-500 text-slate-950 text-xs font-black px-3 py-1 rounded-full">
+                                出品 ${Math.min(auc.itemIndex + 1, auc.items.length)} / ${auc.items.length} 品目
+                            </span>
                         </div>
 
-                        <!-- オークションメイン -->
-                        <div class="bg-slate-900 border border-amber-500/50 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-5">
-                            <div class="flex items-center justify-between border-b border-slate-700 pb-3">
-                                <h3 class="text-lg sm:text-xl font-black text-amber-400">🔨 オーナーズ・オークション（${auc.itemIndex + 1} / 2品目）</h3>
-                                <span class="text-xs bg-slate-800 px-3 py-1 rounded-full text-slate-300">一斉秘密入札方式</span>
-                            </div>
-
-                            <div class="bg-gradient-to-br from-slate-800 to-slate-850 border border-amber-400/40 rounded-2xl p-5 text-center space-y-2">
-                                <span class="inline-block px-3 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40">
-                                    ジャンル：【${currentItem.category}】
-                                </span>
-                                <h4 class="text-2xl sm:text-3xl font-black text-white">${currentItem.name}</h4>
-                                <p class="text-sm text-emerald-200 max-w-lg mx-auto">${currentItem.desc}</p>
-                            </div>
-
-                            ${!hasBid ? `
-                                <div class="space-y-3 bg-slate-800/70 p-4 rounded-xl border border-slate-700">
-                                    <div class="flex items-center justify-between text-sm">
-                                        <span class="font-bold text-slate-300">あなたの入札額（所持金: <strong class="text-amber-300">${formatMoney(me.money)}</strong>）</span>
-                                        <span class="text-xl font-black text-amber-400">${formatMoney(this.bidAmount)}</span>
-                                    </div>
-                                    <div class="flex flex-wrap gap-2">
-                                        <button onclick="window.gameApp.adjustBid(-1000)" class="bg-slate-700 hover:bg-slate-600 px-3.5 py-2 rounded-lg font-bold text-sm">-1,000万</button>
-                                        <button onclick="window.gameApp.adjustBid(1000)" class="bg-slate-700 hover:bg-slate-600 px-3.5 py-2 rounded-lg font-bold text-sm">+1,000万</button>
-                                        <button onclick="window.gameApp.adjustBid(3000)" class="bg-slate-700 hover:bg-slate-600 px-3.5 py-2 rounded-lg font-bold text-sm">+3,000万</button>
-                                        <button onclick="window.gameApp.setBid(0)" class="bg-slate-700 hover:bg-slate-600 px-3.5 py-2 rounded-lg font-bold text-sm text-slate-300">パス（0円）</button>
-                                    </div>
-                                    <div class="grid grid-cols-2 gap-3 pt-2">
-                                        <button onclick="window.gameApp.submitBid(0)" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl transition">
-                                            見送る（0円）
-                                        </button>
-                                        <button onclick="window.gameApp.submitBid(window.gameApp.bidAmount)"
-                                            ${me.money < this.bidAmount && this.bidAmount > 0 ? 'disabled' : ''}
-                                            class="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black py-3 rounded-xl shadow-lg transition">
-                                            ${formatMoney(this.bidAmount)} で入札！
-                                        </button>
-                                    </div>
+                        ${currentItem ? `
+                            <div class="bg-gradient-to-br from-slate-900 via-emerald-950/60 to-slate-900 border-2 border-amber-400/80 rounded-2xl p-6 shadow-2xl space-y-5">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="bg-amber-500/20 border border-amber-400 text-amber-300 text-xs font-black px-3 py-1 rounded-full">
+                                        [${currentItem.category}] アイテム
+                                    </span>
+                                    ${me ? `<span class="text-sm font-black text-amber-300">あなたの所持金: ${formatMoney(me.money)}</span>` : ''}
                                 </div>
-                            ` : `
-                                <div class="bg-emerald-950/70 border border-emerald-600 rounded-xl p-4 text-center">
-                                    <p class="font-bold text-emerald-300">あなたの入札額（${formatMoney(me.auctionBid)}）を登録しました！他のオーナーの入札を待っています...</p>
-                                </div>
-                            `}
 
-                            <!-- 各オーナーの入札状況 -->
-                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                ${data.players.map(p => `
-                                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs">
-                                        <div class="font-bold truncate" style="color:${p.color}">${p.name}</div>
-                                        <div class="text-slate-400">資金: ${formatMoney(p.money)}</div>
-                                        <div class="mt-1 font-bold ${p.auctionBid !== null ? 'text-emerald-400' : 'text-amber-400'}">
-                                            ${p.auctionBid !== null ? '✔ 入札完了' : '⏳ 思考中...'}
+                                <div>
+                                    <h3 class="text-2xl sm:text-3xl font-black text-white">${currentItem.name}</h3>
+                                    <p class="text-sm text-emerald-100 mt-2 bg-slate-950/60 border border-emerald-700/50 rounded-xl p-3.5">
+                                        ✨ 効果：${currentItem.desc}
+                                    </p>
+                                </div>
+
+                                ${me ? (
+                                    hasBid ? `
+                                        <div class="bg-emerald-950/80 border border-emerald-500/60 rounded-xl p-4 text-center space-y-1">
+                                            <div class="text-sm font-black text-emerald-300">✅ 入札完了（入札額: ${formatMoney(me.auctionBid)}）</div>
+                                            <div class="text-xs text-slate-300">他オーナーの入札完了を待っています...</div>
                                         </div>
+                                    ` : `
+                                        <div class="bg-slate-950/70 border border-slate-700 rounded-xl p-4 space-y-4">
+                                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                                <span class="text-xs font-bold text-slate-300">入札額を選択（1,000万円単位・0円でパス）</span>
+                                                <span class="text-xl font-black text-amber-300">${formatMoney(this.bidAmount)}</span>
+                                            </div>
+                                            <input type="range" min="0" max="${maxBid}" step="1000" value="${this.bidAmount}"
+                                                oninput="window.gameApp.bidAmount = Number(this.value); window.gameApp.renderGame();"
+                                                class="w-full accent-amber-400 cursor-pointer">
+                                            <div class="flex flex-wrap gap-2">
+                                                ${[0, 1000, 2000, 3000, 5000].filter(v => v <= maxBid).map(preset => `
+                                                    <button onclick="window.gameApp.bidAmount = ${preset}; window.gameApp.renderGame();"
+                                                        class="px-3 py-1.5 rounded-lg text-xs font-black border ${this.bidAmount === preset ? 'bg-amber-400 text-slate-950 border-amber-300' : 'bg-slate-800 text-slate-200 border-slate-600 hover:bg-slate-700'}">
+                                                        ${preset === 0 ? 'パス（0円）' : formatMoney(preset)}
+                                                    </button>
+                                                `).join('')}
+                                            </div>
+                                            <button onclick="window.gameApp.submitBid(window.gameApp.bidAmount)"
+                                                class="w-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black py-3.5 rounded-xl shadow-lg transition transform active:scale-95">
+                                                🔨 ${formatMoney(this.bidAmount)} で入札する
+                                            </button>
+                                        </div>
+                                    `
+                                ) : ''}
+                            </div>
+                        ` : ''}
+
+                        <!-- オーナー入札状況 -->
+                        <div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-2.5">
+                            <h4 class="text-xs font-black text-slate-300">オーナー入札ステータス</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                ${data.players.map(p => `
+                                    <div class="bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 flex items-center justify-between text-xs">
+                                        <span class="font-black text-white">${p.name}（${formatMoney(p.money)}）</span>
+                                        <span class="font-bold ${p.auctionBid !== null ? 'text-emerald-400' : 'text-amber-300'}">
+                                            ${p.auctionBid !== null ? '入札済' : '検討中...'}
+                                        </span>
                                     </div>
                                 `).join('')}
                             </div>
-
-                            ${auc.history.length > 0 ? `
-                                <div class="border-t border-slate-700 pt-3 space-y-1.5">
-                                    <div class="text-xs font-bold text-slate-400">落札履歴</div>
-                                    ${auc.history.map(h => `
-                                        <div class="text-xs bg-slate-800/80 px-3 py-2 rounded-lg flex justify-between">
-                                            <span class="font-bold text-slate-200">[${h.item.category}] ${h.item.name}</span>
-                                            <span class="text-amber-300 font-bold">${h.result}</span>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            ` : ''}
                         </div>
+
+                        ${auc.history && auc.history.length > 0 ? `
+                            <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-2">
+                                <h4 class="text-xs font-black text-amber-300">これまでの落札結果</h4>
+                                ${auc.history.map(h => `
+                                    <div class="text-xs bg-slate-800/80 px-3 py-2 rounded-lg flex flex-wrap items-center justify-between gap-2">
+                                        <span class="font-bold text-white">[${h.item.category}] ${h.item.name}</span>
+                                        <span class="font-black text-amber-300">${h.result}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
                     </div>
                 `;
-            }
-
-            adjustBid(delta) {
-                const me = this.roomData?.players.find(p => p.id === this.playerId);
-                if (!me) return;
-                this.bidAmount = Math.max(0, Math.min(me.money, this.bidAmount + delta));
-                this.renderGame();
-            }
-
-            setBid(val) {
-                this.bidAmount = val;
-                this.renderGame();
             }
 
             renderPaddock(data) {
                 const races = this.getActiveRaces(data);
                 const race = races[data.raceIndex];
-                const distCat = getDistanceCategory(race.distance);
-                const me = data.players.find(p => p.id === this.playerId);
-                const selectedHorse = me.horses.find(h => h.id === me.selectedHorseId) || me.horses[0];
                 const isSecret = this.isSecretMode(data);
+                const raceDistCat = getDistanceCategory(race.distance);
+                const me = data.players.find(p => p.id === this.playerId);
 
-                const previewRange = this.calculateDiceRange(me, selectedHorse, race, 'early');
+                if (!me) {
+                    return `
+                        <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 text-center space-y-2">
+                            <div class="text-base font-black text-amber-300">他オーナーのパドック準備進行中...</div>
+                            <div class="text-xs text-slate-400">出走馬と装備が決まり次第レースへ進みます。</div>
+                        </div>
+                    `;
+                }
+
+                const selectedHorse = me.horses.find(h => h.id === me.selectedHorseId) || me.horses[0];
+                const isReady = Boolean(me.paddockReady);
 
                 return `
                     <div class="max-w-5xl mx-auto space-y-5">
-                        <!-- レース情報ヘッダー -->
-                        <div class="turf-pattern border border-emerald-600/70 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3">
+                        <!-- レース情報バナー -->
+                        <div class="turf-pattern border border-emerald-600 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-wrap items-center justify-between gap-3">
                             <div>
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <span class="bg-amber-500 text-slate-950 text-xs font-black px-2.5 py-0.5 rounded">第${data.raceIndex + 1}戦</span>
-                                    ${isSecret ? '<span class="bg-purple-700 text-purple-100 text-xs font-black px-2.5 py-0.5 rounded-full border border-purple-400/50">🕵️ 裏モード</span>' : ''}
-                                    <span class="text-xs font-bold text-emerald-200">${race.track} ／ 芝${race.distance.toLocaleString()}m（${distCat}）</span>
-                                    ${race.fillyOnly ? '<span class="bg-pink-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">牝馬限定戦</span>' : ''}
+                                    <span class="bg-amber-500 text-slate-950 text-xs font-black px-2.5 py-0.5 rounded">
+                                        第${data.raceIndex + 1}戦 PADDOCK
+                                    </span>
+                                    ${isSecret ? '<span class="bg-purple-700 text-purple-100 text-xs font-black px-2.5 py-0.5 rounded-full">🕵️ 裏モード：能力＆出目レンジ非公開</span>' : ''}
                                 </div>
-                                <h2 class="text-2xl font-black text-white mt-1">${race.name}</h2>
-                                <p class="text-xs text-emerald-200 mt-0.5">賞金：1着 ${formatMoney(race.prizes[0])} ／ 2着 ${formatMoney(race.prizes[1])} ／ 3着 ${formatMoney(race.prizes[2])}</p>
+                                <h2 class="text-xl sm:text-2xl font-black text-white mt-1">${race.name}</h2>
+                                <p class="text-xs text-emerald-200 mt-0.5">
+                                    ${race.track}・芝${race.distance}m（${raceDistCat}）／ 条件：${race.condition} ／ 1着賞金：${formatMoney(race.prizes[0] || 0)}
+                                </p>
                             </div>
-                            <div class="bg-slate-950/70 border border-emerald-700 rounded-xl px-4 py-2.5 text-xs">
-                                <div class="text-slate-400">あなたの所属厩舎：<strong class="text-white">${me.stable}</strong></div>
-                                <div class="mt-0.5 ${STABLES[me.stable].homeTracks.includes(race.track) ? 'text-emerald-400' : 'text-amber-400'} font-bold">
-                                    ${STABLES[me.stable].homeTracks.includes(race.track) ? '🏠 ホーム開催（遠征ペナルティなし）' : '🚚 遠征競馬（最大出目 -2）'}
-                                </div>
+                            <div class="text-right text-xs bg-slate-950/70 border border-emerald-700/60 rounded-xl px-3.5 py-2">
+                                <div class="font-bold text-amber-300">所属：${me.stable}トレセン</div>
+                                <div class="text-slate-300 mt-0.5">${STABLES[me.stable]?.desc || ''}</div>
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                            <!-- 左2列：出走馬選択 -->
-                            <div class="lg:col-span-2 bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 space-y-4">
-                                <div class="flex flex-wrap items-center justify-between gap-2">
-                                    <h3 class="text-base font-black text-amber-400">1. 出走させる愛馬を選択</h3>
-                                    ${isSecret ? '<span class="text-[11px] text-purple-300 font-bold">🕵️ 裏モード：各馬の能力はマスク中（プルダウンで推理メモ可能）</span>' : ''}
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                            <!-- 左：所有馬選択＆裏モード推理メモ -->
+                            <div class="lg:col-span-7 bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 space-y-4">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-sm font-black text-emerald-300">🐎 出走馬を選択</h3>
+                                    ${race.fillyOnly ? '<span class="text-xs font-bold text-pink-300">※牝馬限定戦</span>' : ''}
                                 </div>
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+                                <div class="space-y-3">
                                     ${me.horses.map(h => {
-                                        const isSelected = h.id === me.selectedHorseId;
-                                        const isLocked = race.fillyOnly && h.sex !== '牝';
-                                        const isDistMatch = h.distance === distCat;
+                                        const eligible = !race.fillyOnly || h.sex === '牝';
+                                        const isSelected = selectedHorse && h.id === selectedHorse.id;
+                                        const range = this.calculateDiceRange(me, h, race, 'early');
                                         const memo = this.getHorseMemo(h.id);
+
                                         return `
-                                            <div onclick="${isLocked || me.paddockReady ? '' : `window.gameApp.selectHorse('${h.id}')`}"
-                                                class="border rounded-xl p-3.5 transition ${isLocked ? 'opacity-40 cursor-not-allowed bg-slate-950 border-slate-800' : isSelected ? 'bg-emerald-900/60 border-amber-400 ring-2 ring-amber-400/50 cursor-pointer' : 'bg-slate-800/80 hover:bg-slate-800 border-slate-600 cursor-pointer'}">
-                                                <div class="flex items-center justify-between">
-                                                    <div class="flex items-center gap-1.5">
-                                                        <span class="text-xs font-black px-1.5 py-0.5 rounded ${h.sex === '牝' ? 'bg-pink-600 text-white' : 'bg-sky-600 text-white'}">${h.sex}</span>
-                                                        <span class="font-black text-white">${h.name}</span>
-                                                    </div>
-                                                    <span class="text-xs font-bold text-amber-300">${h.wins}勝</span>
+                                            <div class="rounded-xl border p-3.5 transition ${isSelected ? 'bg-emerald-950/60 border-amber-400 ring-1 ring-amber-400/50' : 'bg-slate-800/80 border-slate-700'} ${!eligible ? 'opacity-50' : ''}">
+                                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                                    <button ${!eligible || isReady ? 'disabled' : ''} onclick="window.gameApp.selectHorse('${h.id}')"
+                                                        class="text-left flex items-center gap-2.5 flex-1 disabled:cursor-not-allowed">
+                                                        <span class="text-xs font-bold px-2 py-0.5 rounded ${h.sex === '牝' ? 'bg-pink-600 text-white' : 'bg-sky-600 text-white'}">${h.sex}</span>
+                                                        <span class="font-black text-white text-base">${h.name}</span>
+                                                        ${!eligible ? '<span class="text-[11px] text-rose-300 font-bold">（出走不可）</span>' : ''}
+                                                    </button>
+                                                    ${eligible ? `
+                                                        <button ${isReady ? 'disabled' : ''} onclick="window.gameApp.selectHorse('${h.id}')"
+                                                            class="px-3 py-1 rounded-lg text-xs font-black ${isSelected ? 'bg-amber-400 text-slate-950' : 'bg-slate-700 hover:bg-slate-600 text-white'} disabled:opacity-60">
+                                                            ${isSelected ? '出走予定' : '選択'}
+                                                        </button>
+                                                    ` : ''}
                                                 </div>
-                                                ${h.wonRaceNames && h.wonRaceNames.length > 0 ? `
-                                                    <div class="mt-1.5 flex flex-wrap items-center gap-1 text-[10px]">
-                                                        <span class="text-amber-300 font-bold">🏆 勝ち鞍:</span>
-                                                        ${h.wonRaceNames.map(rName => `
-                                                            <span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-400/40 font-bold">${rName}</span>
-                                                        `).join('')}
-                                                    </div>
-                                                ` : ''}
+
+                                                <!-- ステータス・勝ち鞍・出目レンジ -->
+                                                <div class="flex flex-wrap items-center gap-1.5 mt-2.5 text-xs">
+                                                    ${h.wonRaceNames && h.wonRaceNames.length > 0 ? `
+                                                        <span class="px-2 py-0.5 rounded font-bold bg-amber-500/20 text-amber-300 border border-amber-400/50">
+                                                            🏆 勝ち鞍: ${h.wonRaceNames.join('・')}
+                                                        </span>
+                                                    ` : `
+                                                        <span class="px-2 py-0.5 rounded bg-slate-900/70 text-slate-400">勝ち鞍なし</span>
+                                                    `}
+
+                                                    ${isSecret ? `
+                                                        <span class="px-2 py-0.5 rounded font-bold bg-purple-950 text-purple-200 border border-purple-600/40">適性: ???</span>
+                                                        <span class="px-2 py-0.5 rounded font-bold bg-purple-950 text-purple-200 border border-purple-600/40">脚質: ???</span>
+                                                        <span class="px-2 py-0.5 rounded font-bold bg-purple-950 text-purple-200 border border-purple-600/40">気性難: ???</span>
+                                                        <span class="px-2 py-0.5 rounded font-bold bg-purple-950 text-purple-200 border border-purple-600/40">出目レンジ: ???</span>
+                                                    ` : `
+                                                        <span class="px-2 py-0.5 rounded font-bold bg-slate-900 text-emerald-300 border border-slate-700">適性: ${h.distance}</span>
+                                                        <span class="px-2 py-0.5 rounded font-bold bg-slate-900 text-indigo-300 border border-slate-700">脚質: ${h.style}</span>
+                                                        <span class="px-2 py-0.5 rounded font-bold ${h.isUnruly ? 'bg-rose-950 text-rose-300 border border-rose-600/40' : 'bg-slate-900 text-slate-300 border border-slate-700'}">
+                                                            ${h.isUnruly ? '🔥 気性難' : '気性難なし'}
+                                                        </span>
+                                                        <span class="px-2 py-0.5 rounded font-bold bg-amber-950/80 text-amber-200 border border-amber-500/40">
+                                                            序盤出目目安: ${range.min}〜${range.max}
+                                                        </span>
+                                                    `}
+                                                </div>
+
+                                                <!-- 裏モード用：推理メモプルダウン -->
                                                 ${isSecret ? `
-                                                    <div class="flex flex-wrap gap-1.5 mt-2 text-[11px]">
-                                                        <span class="px-2 py-0.5 rounded bg-purple-950/90 text-purple-200 border border-purple-700/60 font-bold">
-                                                            適性: ???
-                                                        </span>
-                                                        <span class="px-2 py-0.5 rounded bg-purple-950/90 text-purple-200 border border-purple-700/60 font-bold">
-                                                            脚質: ???
-                                                        </span>
-                                                        <span class="px-2 py-0.5 rounded bg-purple-950/90 text-purple-200 border border-purple-700/60 font-bold">
-                                                            気性難: ???
-                                                        </span>
-                                                        <span class="px-2 py-0.5 rounded bg-slate-700 text-slate-300">
-                                                            基本: ${h.baseMin}〜${h.baseMax}
-                                                        </span>
-                                                    </div>
-                                                    <!-- 裏モード専用：プレイヤー推理メモ（プルダウン） -->
-                                                    <div onclick="event.stopPropagation()" class="mt-2.5 pt-2 border-t border-slate-700/80 bg-slate-950/70 rounded-lg p-2 space-y-1.5">
-                                                        <div class="text-[10px] font-bold text-purple-300">📝 推理メモ（あなた専用・非公開）</div>
-                                                        <div class="grid grid-cols-3 gap-1.5">
-                                                            <div>
-                                                                <label class="block text-[9px] text-slate-400 mb-0.5">適正距離</label>
-                                                                <select onchange="window.gameApp.updateHorseMemo('${h.id}', 'distance', this.value)"
-                                                                    class="w-full bg-slate-800 border border-slate-600 rounded px-1.5 py-1 text-[11px] text-white focus:outline-none focus:border-purple-400">
-                                                                    <option value="" ${memo.distance === '' ? 'selected' : ''}>未定</option>
-                                                                    <option value="短距離" ${memo.distance === '短距離' ? 'selected' : ''}>短距離</option>
-                                                                    <option value="マイル" ${memo.distance === 'マイル' ? 'selected' : ''}>マイル</option>
-                                                                    <option value="中距離" ${memo.distance === '中距離' ? 'selected' : ''}>中距離</option>
-                                                                    <option value="長距離" ${memo.distance === '長距離' ? 'selected' : ''}>長距離</option>
-                                                                </select>
-                                                            </div>
-                                                            <div>
-                                                                <label class="block text-[9px] text-slate-400 mb-0.5">脚質</label>
-                                                                <select onchange="window.gameApp.updateHorseMemo('${h.id}', 'style', this.value)"
-                                                                    class="w-full bg-slate-800 border border-slate-600 rounded px-1.5 py-1 text-[11px] text-white focus:outline-none focus:border-purple-400">
-                                                                    <option value="" ${memo.style === '' ? 'selected' : ''}>未定</option>
-                                                                    <option value="逃げ" ${memo.style === '逃げ' ? 'selected' : ''}>逃げ</option>
-                                                                    <option value="先行" ${memo.style === '先行' ? 'selected' : ''}>先行</option>
-                                                                    <option value="差し" ${memo.style === '差し' ? 'selected' : ''}>差し</option>
-                                                                    <option value="追込み" ${memo.style === '追込み' ? 'selected' : ''}>追込み</option>
-                                                                </select>
-                                                            </div>
-                                                            <div>
-                                                                <label class="block text-[9px] text-slate-400 mb-0.5">気性難</label>
-                                                                <select onchange="window.gameApp.updateHorseMemo('${h.id}', 'unruly', this.value)"
-                                                                    class="w-full bg-slate-800 border border-slate-600 rounded px-1.5 py-1 text-[11px] text-white focus:outline-none focus:border-purple-400">
-                                                                    <option value="" ${memo.unruly === '' ? 'selected' : ''}>未定</option>
-                                                                    <option value="あり" ${memo.unruly === 'あり' ? 'selected' : ''}>気性難あり</option>
-                                                                    <option value="なし" ${memo.unruly === 'なし' ? 'selected' : ''}>気性難なし</option>
-                                                                </select>
-                                                            </div>
+                                                    <div class="mt-3 pt-2.5 border-t border-purple-500/30 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                                                        <div>
+                                                            <label class="block text-[10px] font-bold text-purple-300 mb-0.5">📝 推理メモ：適正距離</label>
+                                                            <select onchange="window.gameApp.updateHorseMemo('${h.id}', 'distance', this.value)"
+                                                                class="w-full bg-slate-950 border border-purple-600/50 rounded-lg px-2 py-1.5 text-white font-bold outline-none">
+                                                                <option value="" ${memo.distance === '' ? 'selected' : ''}>未記入</option>
+                                                                ${DIST_CATEGORIES.map(dc => `<option value="${dc}" ${memo.distance === dc ? 'selected' : ''}>${dc}</option>`).join('')}
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label class="block text-[10px] font-bold text-purple-300 mb-0.5">📝 推理メモ：脚質</label>
+                                                            <select onchange="window.gameApp.updateHorseMemo('${h.id}', 'style', this.value)"
+                                                                class="w-full bg-slate-950 border border-purple-600/50 rounded-lg px-2 py-1.5 text-white font-bold outline-none">
+                                                                <option value="" ${memo.style === '' ? 'selected' : ''}>未記入</option>
+                                                                ${STYLES.map(st => `<option value="${st}" ${memo.style === st ? 'selected' : ''}>${st}</option>`).join('')}
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label class="block text-[10px] font-bold text-purple-300 mb-0.5">📝 推理メモ：気性難</label>
+                                                            <select onchange="window.gameApp.updateHorseMemo('${h.id}', 'unruly', this.value)"
+                                                                class="w-full bg-slate-950 border border-purple-600/50 rounded-lg px-2 py-1.5 text-white font-bold outline-none">
+                                                                <option value="" ${memo.unruly === '' ? 'selected' : ''}>未記入</option>
+                                                                <option value="あり" ${memo.unruly === 'あり' ? 'selected' : ''}>あり</option>
+                                                                <option value="なし" ${memo.unruly === 'なし' ? 'selected' : ''}>なし</option>
+                                                            </select>
                                                         </div>
                                                     </div>
-                                                ` : `
-                                                    <div class="flex flex-wrap gap-1.5 mt-2 text-[11px]">
-                                                        <span class="px-2 py-0.5 rounded font-bold ${isDistMatch ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-700 text-slate-300'}">
-                                                            適性: ${h.distance} ${isDistMatch ? '◎' : ''}
-                                                        </span>
-                                                        <span class="px-2 py-0.5 rounded bg-indigo-900/80 text-indigo-200 font-bold">
-                                                            脚質: ${h.style}
-                                                        </span>
-                                                        <span class="px-2 py-0.5 rounded bg-slate-700 text-slate-200">
-                                                            基本: ${h.baseMin}〜${h.baseMax}
-                                                        </span>
-                                                        ${h.isUnruly ? '<span class="px-2 py-0.5 rounded bg-red-900/90 text-red-200 font-bold">気性難(+3/-5)</span>' : ''}
-                                                    </div>
-                                                `}
-                                                ${isLocked ? '<div class="text-[11px] text-pink-400 mt-1.5 font-bold">※牝馬限定戦のため出走不可</div>' : ''}
+                                                ` : ''}
                                             </div>
                                         `;
                                     }).join('')}
                                 </div>
                             </div>
 
-                            <!-- 右1列：アイテム装備＆出走確定 -->
-                            <div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 space-y-4 flex flex-col justify-between">
-                                <div class="space-y-4">
-                                    <h3 class="text-base font-black text-amber-400">2. アイテム装備（各枠1つまで）</h3>
-                                    <div class="space-y-2">
-                                        ${['騎手', '装備', '調教'].map(cat => {
-                                            const eq = me.equipped[cat];
-                                            return `
-                                                <div class="bg-slate-800 border border-slate-600 rounded-xl p-3">
-                                                    <div class="flex items-center justify-between">
-                                                        <span class="text-xs font-bold text-slate-400">【${cat}枠】</span>
-                                                        ${eq && !me.paddockReady ? `<button onclick="window.gameApp.unequipItem('${cat}')" class="text-[11px] text-red-400 hover:underline">外す</button>` : ''}
-                                                    </div>
+                            <!-- 右：装備スロット＆所持アイテム -->
+                            <div class="lg:col-span-5 bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 space-y-4">
+                                <h3 class="text-sm font-black text-amber-300">🎒 装着スロット（各枠1つまで）</h3>
+                                <div class="space-y-2.5">
+                                    ${['騎手', '装備', '調教'].map(cat => {
+                                        const eq = me.equipped?.[cat];
+                                        return `
+                                            <div class="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center justify-between gap-2">
+                                                <div>
+                                                    <div class="text-[11px] font-bold text-slate-400">[${cat}]</div>
                                                     ${eq ? `
-                                                        <div class="font-bold text-sm text-amber-300 mt-0.5">${eq.name}</div>
-                                                        <div class="text-[11px] text-slate-300 mt-0.5">${eq.desc}</div>
+                                                        <div class="text-sm font-black text-amber-300">${eq.name}</div>
+                                                        <div class="text-[11px] text-slate-300">${eq.desc}</div>
                                                     ` : `
-                                                        <div class="text-xs text-slate-500 mt-1">未装備</div>
+                                                        <div class="text-xs text-slate-500 font-bold">未装着</div>
                                                     `}
                                                 </div>
-                                            `;
-                                        }).join('')}
-                                    </div>
-
-                                    <div>
-                                        <div class="text-xs font-bold text-slate-300 mb-1.5">所持アイテム一覧（クリックで装備）</div>
-                                        ${me.inventory.length === 0 ? `
-                                            <div class="text-xs text-slate-500 bg-slate-800/50 p-3 rounded-xl text-center">所持アイテムはありません</div>
-                                        ` : `
-                                            <div class="space-y-1.5 max-h-44 overflow-y-auto pr-1">
-                                                ${me.inventory.map((item, idx) => `
-                                                    <button onclick="window.gameApp.equipItem(${idx})" ${me.paddockReady ? 'disabled' : ''}
-                                                        class="w-full text-left bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg p-2 transition">
-                                                        <div class="flex items-center justify-between">
-                                                            <span class="text-xs font-bold text-white">[${item.category}] ${item.name}</span>
-                                                            <span class="text-[10px] text-emerald-400 font-bold">装備する</span>
-                                                        </div>
-                                                        <div class="text-[10px] text-slate-400 mt-0.5">${item.desc}</div>
+                                                ${eq && !isReady ? `
+                                                    <button onclick="window.gameApp.unequipItem('${cat}')"
+                                                        class="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-rose-700 text-xs font-bold text-white">
+                                                        外す
                                                     </button>
-                                                `).join('')}
+                                                ` : ''}
                                             </div>
-                                        `}
-                                    </div>
+                                        `;
+                                    }).join('')}
                                 </div>
 
-                                <div class="pt-3 border-t border-slate-700 space-y-3">
-                                    <div class="bg-slate-800 rounded-xl p-2.5 text-center">
-                                        <div class="text-[11px] text-slate-400">選択馬の序盤予想出目レンジ</div>
-                                        ${isSecret ? `
-                                            <div class="text-lg font-black text-purple-300">??? 〜 ???</div>
-                                            <div class="text-[10px] text-slate-400">※裏モードでは出目レンジ非公開</div>
-                                        ` : `
-                                            <div class="text-lg font-black text-emerald-400">${previewRange.min} 〜 ${previewRange.max}</div>
-                                        `}
-                                    </div>
-
-                                    ${!me.paddockReady ? `
-                                        <button onclick="window.gameApp.confirmPaddockReady()"
-                                            class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 font-black py-3.5 rounded-xl shadow-lg transition">
-                                            🏁 この態勢で出走確定！
-                                        </button>
-                                    ` : `
-                                        <div class="bg-emerald-950 border border-emerald-500 text-emerald-300 text-xs font-bold p-3 rounded-xl text-center">
-                                            ✔ 出走準備完了！他オーナーを待っています...
+                                <div class="space-y-2 pt-2 border-t border-slate-800">
+                                    <h4 class="text-xs font-black text-emerald-300">所持アイテム一覧</h4>
+                                    ${me.inventory && me.inventory.length > 0 ? `
+                                        <div class="space-y-2 max-h-60 overflow-y-auto pr-1">
+                                            ${me.inventory.map((item, idx) => `
+                                                <div class="bg-slate-800/70 border border-slate-700 rounded-xl p-2.5 flex items-center justify-between gap-2">
+                                                    <div>
+                                                        <div class="text-xs font-black text-white">[${item.category}] ${item.name}</div>
+                                                        <div class="text-[11px] text-slate-400">${item.desc}</div>
+                                                    </div>
+                                                    <button ${isReady ? 'disabled' : ''} onclick="window.gameApp.equipItem(${idx})"
+                                                        class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs shrink-0 disabled:opacity-50">
+                                                        装着
+                                                    </button>
+                                                </div>
+                                            `).join('')}
                                         </div>
+                                    ` : `
+                                        <div class="text-xs text-slate-500 py-2">所持アイテムはありません。</div>
                                     `}
                                 </div>
+
+                                ${isReady ? `
+                                    <div class="bg-emerald-950/80 border border-emerald-500/60 rounded-xl p-3.5 text-center text-xs sm:text-sm font-black text-emerald-300">
+                                        ✅ 出走準備完了！他オーナーの完了を待っています...
+                                    </div>
+                                ` : `
+                                    <button onclick="window.gameApp.confirmPaddockReady()"
+                                        class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 font-black py-3.5 rounded-xl text-base shadow-xl transition transform active:scale-95">
+                                        🐎 この内容で出走確定する
+                                    </button>
+                                `}
+                            </div>
+                        </div>
+
+                        <!-- 全オーナーの準備状況 -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <span class="font-bold text-slate-400">オーナー準備状況：</span>
+                            <div class="flex flex-wrap gap-2">
+                                ${data.players.map(p => `
+                                    <span class="px-2.5 py-1 rounded-full font-bold ${p.paddockReady ? 'bg-emerald-900 text-emerald-200 border border-emerald-500/50' : 'bg-slate-800 text-amber-300 border border-slate-700'}">
+                                        ${p.name}: ${p.paddockReady ? '準備完了' : '準備中'}
+                                    </span>
+                                `).join('')}
                             </div>
                         </div>
                     </div>
@@ -1905,8 +1880,10 @@
                 const rs = data.raceState;
                 const isHost = data.hostId === this.playerId;
                 const isSecret = this.isSecretMode(data);
+                const isStarted = Boolean(rs.isStarted);
                 const nextTurn = Math.min(rs.maxTurns, rs.turn + 1);
                 const nextStage = this.getStageForTurn(nextTurn, race.track, rs.maxTurns);
+                const currentStage = rs.turn === 0 ? nextStage : this.getStageForTurn(rs.turn, race.track, rs.maxTurns);
                 const maxProg = Math.max(rs.maxTurns, ...rs.runners.map(r => r.progress + 1));
                 const topProgress = Math.max(...rs.runners.map(r => r.progress));
                 const currentMeters = rs.turn * 100;
@@ -1914,12 +1891,39 @@
 
                 return `
                     <div class="max-w-5xl mx-auto space-y-5">
+                        <!-- スクロール追従・上部固定ステータスバー（ターン数 / レース距離） -->
+                        <div class="sticky top-[60px] z-30 bg-slate-950/95 border border-amber-500/70 rounded-xl px-4 py-2.5 shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex items-center gap-2.5">
+                                <span class="bg-amber-500 text-slate-950 text-xs font-black px-2.5 py-0.5 rounded">
+                                    ${race.name}
+                                </span>
+                                <span class="text-xs sm:text-sm font-black text-white">
+                                    ターン <span class="text-amber-300 text-base">${rs.turn} / ${rs.maxTurns}</span>
+                                    <span class="text-slate-400 mx-1">｜</span>
+                                    距離 <span class="text-emerald-300 text-base">${currentMeters}m / ${race.distance}m</span>
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs font-bold">
+                                <span class="px-2.5 py-0.5 rounded-full bg-indigo-950 border border-indigo-500/50 text-indigo-200">
+                                    展開: ${isStarted ? currentStage.label : '発走前（序盤待機）'}
+                                </span>
+                                ${isStarted ? `
+                                    <span class="inline-flex items-center gap-1.5 text-emerald-300">
+                                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                                        オート進行中
+                                    </span>
+                                ` : `
+                                    <span class="text-amber-300">ゲート待機中</span>
+                                `}
+                            </div>
+                        </div>
+
                         <!-- レース実況ヘッダー -->
                         <div class="turf-pattern border border-emerald-600 rounded-2xl p-4 sm:p-5 shadow-xl">
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                                 <div class="flex flex-wrap items-center gap-2">
                                     <span class="bg-amber-500 text-slate-950 text-xs font-black px-3 py-1 rounded-full">
-                                        G1 LIVE ／ ${currentMeters}m / ${race.distance}m（次展開: ${nextStage.label}）
+                                        G1 LIVE ／ ${rs.turn} / ${rs.maxTurns}ターン（${currentMeters}m / ${race.distance}m）
                                     </span>
                                     ${isSecret ? '<span class="bg-purple-700 text-purple-100 text-xs font-black px-2.5 py-1 rounded-full border border-purple-400/50">🕵️ 裏モード：出目から能力推理中</span>' : ''}
                                 </div>
@@ -1929,6 +1933,23 @@
                                 🎙️ ${rs.commentary}
                             </p>
                         </div>
+
+                        <!-- レース開始前：ゲートオープン（開始ボタン）エリア -->
+                        ${!isStarted ? `
+                            <div class="bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/90 border-2 border-amber-400 rounded-2xl p-5 text-center shadow-2xl space-y-3">
+                                <div class="text-sm font-bold text-amber-200">全馬ゲートイン完了！能力・装備を確認したらレースを開始してください。</div>
+                                ${isHost ? `
+                                    <button onclick="window.gameApp.startRace()"
+                                        class="w-full sm:w-auto px-10 py-4 bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-lg sm:text-xl rounded-2xl shadow-xl transition transform active:scale-95">
+                                        🎺 レース開始（発走・オート進行スタート）
+                                    </button>
+                                ` : `
+                                    <div class="inline-block bg-slate-800 border border-amber-500/50 text-amber-300 text-sm font-bold px-5 py-3 rounded-xl animate-pulse">
+                                        ホストが「レース開始」ボタンを押すのを待っています...
+                                    </div>
+                                `}
+                            </div>
+                        ` : ''}
 
                         <!-- 4頭レーン表示 -->
                         <div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 space-y-4">
@@ -2037,25 +2058,27 @@
                             }).join('')}
                         </div>
 
-                        <!-- 進行ボタン -->
-                        <div class="text-center space-y-2">
-                            <div class="inline-flex items-center gap-2 bg-emerald-950/90 border border-emerald-500/60 text-emerald-200 text-xs sm:text-sm font-bold px-4 py-2 rounded-full">
-                                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-                                ⏱️ 3秒間隔でオート進行中（次: ${nextMeters}m / ${race.distance}m・${nextStage.label}）
+                        <!-- 進行ボタン（レース開始後のみ表示） -->
+                        ${isStarted ? `
+                            <div class="text-center space-y-2">
+                                <div class="inline-flex items-center gap-2 bg-emerald-950/90 border border-emerald-500/60 text-emerald-200 text-xs sm:text-sm font-bold px-4 py-2 rounded-full">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                                    ⏱️ 3秒間隔でオート進行中（次: ${nextTurn}/${rs.maxTurns}ターン・${nextMeters}m / ${race.distance}m・${nextStage.label}）
+                                </div>
+                                ${isHost ? `
+                                    <div>
+                                        <button onclick="window.gameApp.advanceRaceTurn()"
+                                            class="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-base rounded-2xl shadow-xl transition transform active:scale-95">
+                                            🎲 今すぐ次のターンへ進める
+                                        </button>
+                                    </div>
+                                ` : `
+                                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm text-amber-300 font-bold">
+                                        3秒ごとに自動でダイスが振られ、レースが進行します...
+                                    </div>
+                                `}
                             </div>
-                            ${isHost ? `
-                                <div>
-                                    <button onclick="window.gameApp.advanceRaceTurn()"
-                                        class="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-base rounded-2xl shadow-xl transition transform active:scale-95">
-                                        🎲 今すぐ次のターンへ進める
-                                    </button>
-                                </div>
-                            ` : `
-                                <div class="bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm text-amber-300 font-bold">
-                                    3秒ごとに自動でダイスが振られ、レースが進行します...
-                                </div>
-                            `}
-                        </div>
+                        ` : ''}
                     </div>
                 `;
             }
